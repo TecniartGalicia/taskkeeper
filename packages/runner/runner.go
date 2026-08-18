@@ -1,0 +1,334 @@
+// Package runner ejecuta una ocurrencia de principio a fin.
+//
+// Es lo que arranca el programador del sistema operativo. No hay proceso
+// residente: este código vive lo que dura una ejecución y se va.
+package runner
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os/exec"
+	"time"
+
+	"github.com/argalla/taskkeeper/adapters"
+	"github.com/argalla/taskkeeper/packages/gitwt"
+	"github.com/argalla/taskkeeper/packages/platform"
+	"github.com/argalla/taskkeeper/packages/store"
+	"github.com/argalla/taskkeeper/packages/turns"
+)
+
+type Opciones struct {
+	CupoSimultaneo int
+	DirTurnos      string
+	DirWorktrees   string
+	EsperaTurno    time.Duration
+	SondeoCancel   time.Duration
+}
+
+func PorDefecto() Opciones {
+	return Opciones{
+		CupoSimultaneo: 1,
+		EsperaTurno:    30 * time.Minute,
+		SondeoCancel:   3 * time.Second,
+	}
+}
+
+// Deps permite sustituir el agente y el grupo de procesos en las pruebas, para
+// no gastar cuota real cada vez que se comprueba la cancelación.
+type Deps struct {
+	Adaptador func(nombre string) (adapters.Adaptador, error)
+	Grupo     func() (platform.GrupoProcesos, error)
+}
+
+func DepsReales() Deps {
+	return Deps{Adaptador: adapters.Para, Grupo: platform.NuevoGrupo}
+}
+
+// Ejecutar procesa una ocurrencia. Nunca devuelve error por un fallo de la
+// tarea: los fallos de la tarea son estados, no errores del programa. Solo
+// devuelve error si no pudo ni siquiera registrar lo ocurrido.
+func Ejecutar(ctx context.Context, db *store.DB, d Deps, o Opciones,
+	taskID string, ocurrencia time.Time) error {
+
+	task, err := db.GetTask(taskID)
+	if err != nil {
+		return fmt.Errorf("tarea %s: %w", taskID, err)
+	}
+	rev, err := db.LatestRevision(taskID)
+	if err != nil {
+		return fmt.Errorf("revisión de %s: %w", taskID, err)
+	}
+
+	// 1. Idempotencia. Si esta ocurrencia ya tiene ejecución, este proceso se
+	//    retira en silencio: es el caso del disparo de recuperación que llega
+	//    después del normal.
+	run, creada, err := db.CreateRunIfAbsent(taskID, rev.ID, ocurrencia)
+	if err != nil {
+		return err
+	}
+	if !creada {
+		return nil
+	}
+
+	// 2. Turno. Sin coordinador central, el cupo se reparte con ficheros.
+	slot, err := turns.Acquire(o.CupoSimultaneo, o.DirTurnos, o.EsperaTurno)
+	if err != nil {
+		db.Transition(run.ID, store.StateSkipped, "sin turno libre dentro del plazo")
+		return nil
+	}
+	defer slot.Release()
+
+	if db.CancelRequested(run.ID) {
+		db.Transition(run.ID, store.StateCancelled, "cancelada antes de empezar")
+		return nil
+	}
+
+	// 3. Preflight. Todo lo que falle aquí es seguro: no se ha lanzado nada.
+	if err := db.Transition(run.ID, store.StatePreflight, ""); err != nil {
+		return err
+	}
+	proj, err := db.GetProject(task.ProjectID)
+	if err != nil {
+		db.Transition(run.ID, store.StateFailed, err.Error())
+		return nil
+	}
+	ad, err := d.Adaptador(task.Agent)
+	if err != nil {
+		db.Transition(run.ID, store.StateFailed, err.Error())
+		return nil
+	}
+	// La ruta del agente se resuelve AHORA, no se confía en la guardada: caduca
+	// en cuanto VS Code actualiza la extensión.
+	if _, err := ad.Detectar(); err != nil {
+		db.Transition(run.ID, store.StateFailedAuth, err.Error())
+		return nil
+	}
+	pf, err := gitwt.Comprobar(ctx, proj.WorkspacePath, proj.DefaultBranch)
+	if err != nil {
+		db.Transition(run.ID, store.StateFailed, err.Error())
+		return nil
+	}
+	if pf.Sucio {
+		db.AppendEvent(run.ID, "aviso",
+			`{"aviso":"el checkout principal tiene cambios sin guardar; no se copian al worktree"}`)
+	}
+
+	// 4. Worktree desde el commit resuelto, no desde la rama.
+	rama, err := gitwt.NombreRama(task.Name, ocurrencia, run.ID[:6])
+	if err != nil {
+		db.Transition(run.ID, store.StateFailed, err.Error())
+		return nil
+	}
+	wt, err := gitwt.Crear(ctx, pf, o.DirWorktrees, rama)
+	if err != nil {
+		db.Transition(run.ID, store.StateFailed, err.Error())
+		return nil
+	}
+	db.SetRunField(run.ID, "worktree_path", wt.Path)
+	db.SetRunField(run.ID, "worktree_branch", wt.Branch)
+	db.SetRunField(run.ID, "base_commit", wt.Base)
+
+	// 5. El agente, dentro de su grupo de procesos.
+	grupo, err := d.Grupo()
+	if err != nil {
+		db.Transition(run.ID, store.StateFailed, err.Error())
+		return nil
+	}
+	// Cierre del grupo = muerte de toda la descendencia. Es la red de seguridad
+	// si este proceso se va sin cancelar nada.
+	defer grupo.Close()
+
+	cmd, err := ad.Comando(adapters.Peticion{
+		Prompt:        rev.Prompt,
+		Modo:          adapters.Modo(task.ConversationMode),
+		NuevaSesionID: uuidDe(run.ID),
+		DirTrabajo:    proj.WorkspacePath,
+		Worktree:      wt.Path,
+		Perfil:        adapters.Perfil(task.PermissionProfile),
+		MaxTurnos:     40,
+		MaxPresupuesto: nz(task.MaxBudgetUSD.Float64, task.MaxBudgetUSD.Valid),
+	})
+	if err != nil {
+		db.Transition(run.ID, store.StateFailed, err.Error())
+		return nil
+	}
+	if task.PermissionProfile == string(adapters.PerfilAislado) {
+		cmd.Dir = wt.Path
+	}
+
+	salida, err := cmd.StdoutPipe()
+	if err != nil {
+		db.Transition(run.ID, store.StateFailed, err.Error())
+		return nil
+	}
+	grupo.Prepare(cmd)
+	if err := cmd.Start(); err != nil {
+		db.Transition(run.ID, store.StateFailed, err.Error())
+		return nil
+	}
+	// En la instrucción siguiente al arranque: la ventana de carrera es la
+	// mínima posible sin recurrir a CreateProcess suspendido.
+	if err := grupo.Adopt(cmd.Process.Pid); err != nil {
+		grupo.KillAll()
+		db.Transition(run.ID, store.StateFailed, "no se pudo aislar el proceso: "+err.Error())
+		return nil
+	}
+	db.Transition(run.ID, store.StateRunning, "")
+
+	des := consumir(ctx, db, run.ID, ad, grupo, salida, cmd,
+		time.Duration(task.TimeoutSeconds)*time.Second, o.SondeoCancel)
+
+	// 6. Cerrar según el desenlace.
+	switch des.Estado {
+	case string(store.StateVerifying):
+		ficheros, diff, err := wt.Cambios(ctx)
+		if err != nil {
+			db.Transition(run.ID, store.StateFailed, err.Error())
+			return nil
+		}
+		if len(ficheros) > 0 {
+			if _, err := wt.Confirmar(ctx, "TaskKeeper: "+task.Name); err != nil {
+				db.Transition(run.ID, store.StateFailed, err.Error())
+				return nil
+			}
+		}
+		resumen, _ := json.Marshal(map[string]any{
+			"ficheros": ficheros, "bytes_diff": len(diff),
+		})
+		db.Transition(run.ID, store.StateVerifying, "")
+		db.SetRunField(run.ID, "summary", string(resumen))
+		if des.CosteUSD != nil {
+			db.SetRunField(run.ID, "cost_usd", *des.CosteUSD)
+		}
+		db.SetRunField(run.ID, "stop_subtype", des.Subtipo)
+		db.Transition(run.ID, store.StateAwaitingReview, "")
+	default:
+		if des.CosteUSD != nil {
+			db.SetRunField(run.ID, "cost_usd", *des.CosteUSD)
+		}
+		db.SetRunField(run.ID, "error_code", des.Codigo)
+		db.Transition(run.ID, store.State(des.Estado), des.Detalle)
+	}
+	return nil
+}
+
+func consumir(ctx context.Context, db *store.DB, runID string, ad adapters.Adaptador,
+	grupo platform.GrupoProcesos, salida interface{ Read([]byte) (int, error) },
+	cmd *exec.Cmd, timeout, sondeo time.Duration) adapters.Desenlace {
+
+	lineas := make(chan []byte, 64)
+	go func() {
+		defer close(lineas)
+		sc := bufio.NewScanner(salida)
+		sc.Buffer(make([]byte, 1024*1024), 16*1024*1024) // las líneas JSON son largas
+		for sc.Scan() {
+			b := make([]byte, len(sc.Bytes()))
+			copy(b, sc.Bytes())
+			lineas <- b
+		}
+	}()
+
+	limite := time.After(timeout)
+	tic := time.NewTicker(sondeo)
+	defer tic.Stop()
+
+	var ultimo adapters.Evento
+	for {
+		select {
+		case <-ctx.Done():
+			grupo.KillAll()
+			return adapters.Desenlace{Estado: string(store.StateCancelled), Detalle: "contexto cancelado"}
+
+		case <-tic.C:
+			// D7: la cancelación llega por la base, no por un canal.
+			if db.CancelRequested(runID) {
+				grupo.KillAll()
+				return adapters.Desenlace{Estado: string(store.StateCancelled),
+					Detalle: "cancelada por el usuario"}
+			}
+
+		case <-limite:
+			grupo.KillAll()
+			return adapters.Desenlace{Estado: string(store.StateFailed), Codigo: "timeout",
+				Detalle: fmt.Sprintf("superado el límite de %s", timeout)}
+
+		case b, ok := <-lineas:
+			if !ok {
+				_ = cmd.Wait()
+				return desenlaceFinal(cmd, ultimo)
+			}
+			ev, válido := ad.Parsear(b)
+			if !válido {
+				continue
+			}
+			ultimo = ev
+			db.AppendEvent(runID, string(ev.Tipo), string(b))
+
+			switch {
+			case ev.Tipo == adapters.EvSesionIniciada && ev.SesionID != "":
+				db.SetRunField(runID, "provider_session_id", ev.SesionID)
+			case ev.TurnoID != "":
+				db.SetRunField(runID, "provider_turn_id", ev.TurnoID)
+			case ev.Tipo == adapters.EvReintentoAPI:
+				// Hallazgo de la Fase 0: una credencial caducada NO falla, se
+				// reintenta diez veces con espera creciente. Se corta al primero,
+				// o la tarea consume su timeout completo contra una pared.
+				switch ev.EstadoHTTP {
+				case 401, 403:
+					grupo.KillAll()
+					return adapters.Desenlace{Estado: string(store.StateFailedAuth),
+						Codigo: ev.CodigoError, Detalle: "credencial rechazada"}
+				case 429:
+					grupo.KillAll()
+					return adapters.Desenlace{Estado: string(store.StateFailedQuota),
+						Codigo: ev.CodigoError, Detalle: "límite de uso del proveedor"}
+				}
+			}
+		}
+	}
+}
+
+func desenlaceFinal(cmd *exec.Cmd, ultimo adapters.Evento) adapters.Desenlace {
+	if ultimo.Tipo == adapters.EvResultado {
+		switch ultimo.Subtipo {
+		case "success", "":
+			return adapters.Desenlace{Estado: string(store.StateVerifying),
+				CosteUSD: ultimo.CosteUSD, Subtipo: ultimo.Subtipo}
+		case "error_max_turns", "error_max_budget_usd":
+			// Corte por un límite nuestro, no fallo del agente.
+			return adapters.Desenlace{Estado: string(store.StateFailed),
+				Codigo: ultimo.Subtipo, CosteUSD: ultimo.CosteUSD, Subtipo: ultimo.Subtipo}
+		}
+	}
+	code := 0
+	if cmd.ProcessState != nil {
+		code = cmd.ProcessState.ExitCode()
+	}
+	if code == 0 {
+		return adapters.Desenlace{Estado: string(store.StateVerifying)}
+	}
+	// Ante la duda, `failed`: es el estado que no reintenta y sí notifica.
+	return adapters.Desenlace{Estado: string(store.StateFailed),
+		Codigo: fmt.Sprintf("exit_%d", code)}
+}
+
+func nz(v float64, ok bool) float64 {
+	if !ok {
+		return 0
+	}
+	return v
+}
+
+// uuidDe convierte el identificador interno en un UUID válido, que es lo único
+// que acepta --session-id.
+func uuidDe(id string) string {
+	if len(id) < 32 {
+		return ""
+	}
+	return fmt.Sprintf("%s-%s-%s-%s-%s", id[0:8], id[8:12], id[12:16], id[16:20], id[20:32])
+}
+
+var ErrSinTarea = errors.New("tarea no encontrada")
