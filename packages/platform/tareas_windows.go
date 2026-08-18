@@ -4,12 +4,11 @@ package platform
 
 import (
 	"fmt"
-	"os"
+	win "github.com/argalla/taskkeeper/packages/platform/windows"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
-
-	win "github.com/argalla/taskkeeper/packages/platform/windows"
 )
 
 type EspecDisparador struct {
@@ -23,15 +22,27 @@ func RegistrarTarea(taskID, comando, argumentos string, spec EspecDisparador) er
 		Tipo: spec.Tipo, Inicio: spec.Inicio, Weekdays: spec.Weekdays,
 	})
 }
-
-func RetirarTarea(taskID string) error { return win.Unregister(taskID) }
+func RetirarTarea(taskID string) error   { return win.Unregister(taskID) }
 func NombreDeTarea(taskID string) string { return win.NombreTarea(taskID) }
 
-// LanzarWorker arranca una ejecución a mano, sin pasar por el programador.
+// LanzarWorker arranca una ejecución a mano y DEVUELVE EL CONTROL AL INSTANTE.
+//
+// Antes esperaba a que terminase, así que "Ejecutar ahora" dejaba la extensión
+// colgada todo lo que durase el agente. Se lanza desatendido y el progreso se
+// sigue por la bandeja, igual que en una ejecución nocturna.
+//
+// No se usa el disparo del programador para esto a propósito: por ahí llegaría
+// con los argumentos registrados y el worker derivaría la hora prevista, que es
+// justo lo contrario de lo que quiere decir "ahora".
 func LanzarWorker(worker, taskID string, cuando time.Time) error {
-	cmd := exec.Command(worker, "--run", taskID, "--occurrence", cuando.Format(time.RFC3339))
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	return cmd.Run()
+	cmd := exec.Command(worker, "--run", taskID, "--manual",
+		"--occurrence", cuando.Format(time.RFC3339))
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	// Se suelta el proceso: vive por su cuenta y este mando se va.
+	return cmd.Process.Release()
 }
 
 // AvisoReactivacion devuelve un texto para el usuario si el equipo no va a poder
@@ -55,7 +66,6 @@ func AvisoReactivacion() string {
 			"no despertará, la tarea se ejecutará cuando lo enciendas"
 	}
 }
-
 func indices(s string) (ac, dc int) {
 	ac, dc = -1, -1
 	for _, l := range strings.Split(s, "\n") {

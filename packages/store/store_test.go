@@ -127,7 +127,7 @@ func TestBandeja(t *testing.T) {
 	for i, estados := range [][]State{
 		{StatePreflight, StateRunning, StateVerifying, StateAwaitingReview}, // sale
 		{StatePreflight, StateRunning, StateFailedAuth},                     // sale
-		{StateSkipped},                                                      // no sale
+		{StateSkipped}, // no sale
 	} {
 		r, _, _ := db.CreateRunIfAbsent(task.ID, rev.ID, base.Add(time.Duration(i)*time.Hour))
 		for _, s := range estados {

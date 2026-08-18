@@ -38,11 +38,16 @@ func TestElSistemaOperativoDisparaElWorker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// La política de retraso es run_if_late con una ventana enorme a propósito:
+	// el worker deriva la hora prevista de la regla, y a cualquier hora del día
+	// que se ejecute la prueba llegaría "tarde" respecto a las 03:00. Lo que se
+	// mide aquí es el disparo, no la política, que tiene sus propias pruebas.
 	task, _, err := db.CreateTask(store.Task{
 		Name: "sonda p20", ProjectID: pid, Agent: "agente-inexistente", Enabled: true,
 		ConversationMode: "new", ScheduleRule: `{"type":"daily","time":"03:00"}`,
-		Timezone: "Europe/Madrid", MisfirePolicy: "skip",
-		PermissionProfile: "auditoria", TimeoutSeconds: 60,
+		Timezone: "Europe/Madrid", MisfirePolicy: "run_if_late",
+		MaxLatenessSeconds: 30 * 24 * 3600,
+		PermissionProfile:  "auditoria", TimeoutSeconds: 60,
 	}, "no importa")
 	if err != nil {
 		t.Fatal(err)

@@ -47,6 +47,8 @@ func main() {
 		ahora(db, cfg, os.Args[2:])
 	case "cancelar":
 		cancelar(db, os.Args[2:])
+	case "cupo":
+		cupo(db, os.Args[2:])
 	case "bandeja":
 		bandeja(db)
 	case "aceptar":
@@ -66,6 +68,7 @@ func uso() {
             --regla daily|weekly|once --hora HH:MM [--dias 1,5] [--zona IANA]
             [--perfil auditoria|cambios_aislados]
   listar
+  cupo      [n]                 ejecuciones simultáneas en esta máquina
   borrar    <id-tarea>
   ahora     <id-tarea>          ejecuta sin alterar la próxima ocurrencia
   cancelar  <id-ejecucion>
@@ -165,6 +168,23 @@ func crear(db *store.DB, cfg config.Config, args []string) {
 	}
 }
 
+// cupo lee o fija el ajuste de la máquina. Es uno solo para todo el ordenador,
+// así que vive en la base y no en los disparadores.
+func cupo(db *store.DB, args []string) {
+	if len(args) == 0 {
+		fmt.Printf("cupo actual: %d ejecución(es) simultánea(s)\n", db.Cupo())
+		return
+	}
+	var n int
+	if _, err := fmt.Sscanf(args[0], "%d", &n); err != nil || n < 1 {
+		fatal(fmt.Errorf("el cupo debe ser un número mayor que cero"))
+	}
+	if err := db.FijarAjuste(store.ClaveCupo, args[0]); err != nil {
+		fatal(err)
+	}
+	fmt.Printf("cupo fijado en %d; la próxima ejecución ya lo respeta, sin tocar ningún disparador\n", n)
+}
+
 func listar(db *store.DB) {
 	tareas, err := db.ListTasks()
 	if err != nil {
@@ -196,13 +216,13 @@ func borrar(db *store.DB, args []string) {
 
 func ahora(db *store.DB, cfg config.Config, args []string) {
 	id := arg(args, 0)
-	// Instante artificial para no chocar con la clave de idempotencia de la
-	// ocurrencia programada: probar a mano no debe consumir la de esta noche.
+	// Instante actual, no la hora prevista: probar a mano no debe consumir la
+	// ocurrencia programada de esta noche.
 	cuando := time.Now().UTC()
-	fmt.Printf("lanzando %s ...\n", id)
 	if err := platform.LanzarWorker(cfg.Worker, id, cuando); err != nil {
 		fatal(err)
 	}
+	fmt.Printf("lanzada %s en segundo plano; sigue el progreso con `bandeja`\n", id)
 }
 
 func cancelar(db *store.DB, args []string) {

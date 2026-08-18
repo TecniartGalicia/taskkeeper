@@ -56,10 +56,10 @@ func TestComandoClaude(t *testing.T) {
 
 	for _, obligatorio := range []string{
 		"--output-format stream-json",
-		"--verbose",                    // sin esto la ejecución falla
-		"--permission-mode default",    // no se confía en el valor por defecto
-		"--settings C:/perfil.json",    // neutraliza la configuración del usuario
-		"--session-id 11111111",        // identificador fijado por nosotros
+		"--verbose",                 // sin esto la ejecución falla
+		"--permission-mode default", // no se confía en el valor por defecto
+		"--settings C:/perfil.json", // neutraliza la configuración del usuario
+		"--session-id 11111111",     // identificador fijado por nosotros
 		"--max-turns 40",
 		"--max-budget-usd 2.00",
 	} {

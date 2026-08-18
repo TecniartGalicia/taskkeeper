@@ -16,6 +16,7 @@ import (
 	"github.com/argalla/taskkeeper/adapters"
 	"github.com/argalla/taskkeeper/packages/gitwt"
 	"github.com/argalla/taskkeeper/packages/platform"
+	"github.com/argalla/taskkeeper/packages/scheduler"
 	"github.com/argalla/taskkeeper/packages/store"
 	"github.com/argalla/taskkeeper/packages/turns"
 )
@@ -47,9 +48,79 @@ func DepsReales() Deps {
 	return Deps{Adaptador: adapters.Para, Grupo: platform.NuevoGrupo}
 }
 
-// Ejecutar procesa una ocurrencia. Nunca devuelve error por un fallo de la
-// tarea: los fallos de la tarea son estados, no errores del programa. Solo
-// devuelve error si no pudo ni siquiera registrar lo ocurrido.
+// EjecutarProgramada es el punto de entrada del disparador del sistema.
+//
+// El sistema operativo no dice de qué hora viene, así que la ocurrencia se
+// DERIVA de la regla de la tarea. Suponer "ahora" tenía dos consecuencias malas:
+// no se podía saber si la ejecución llegaba tarde, y la clave de idempotencia
+// nunca coincidía, así que la protección contra duplicados no protegía nada en
+// las ejecuciones reales.
+//
+// Con la ocurrencia derivada, además, las dos políticas de retraso dejan de
+// pelearse: el sistema nos despierta aunque sea tarde y aquí se decide si
+// merece la pena ejecutar.
+func EjecutarProgramada(ctx context.Context, db *store.DB, d Deps, o Opciones,
+	taskID string, ahora time.Time) error {
+
+	task, err := db.GetTask(taskID)
+	if err != nil {
+		return fmt.Errorf("tarea %s: %w", taskID, err)
+	}
+	if !task.Enabled {
+		return nil
+	}
+
+	var regla scheduler.Rule
+	if err := json.Unmarshal([]byte(task.ScheduleRule), &regla); err != nil {
+		return fmt.Errorf("regla de calendario de %s: %w", taskID, err)
+	}
+	occ, err := scheduler.Previous(regla, task.Timezone, ahora)
+	if err != nil {
+		return fmt.Errorf("calculando la ocurrencia de %s: %w", taskID, err)
+	}
+	if occ == nil {
+		// Ninguna hora prevista ha pasado todavía: nada que ejecutar.
+		return nil
+	}
+
+	maxRetraso := time.Duration(task.MaxLatenessSeconds) * time.Second
+	switch scheduler.ResolveMisfire(occ.ScheduledForUTC, ahora,
+		scheduler.MisfirePolicy(task.MisfirePolicy), maxRetraso) {
+
+	case scheduler.DecisionSkip:
+		// Se deja constancia de la omisión: que no se ejecutase también es
+		// información, y sin ella el usuario no entiende por qué no pasó nada.
+		if run, creada, err := db.CreateRunIfAbsent(taskID, revID(db, taskID), occ.ScheduledForUTC); err == nil && creada {
+			db.Transition(run.ID, store.StateSkipped,
+				fmt.Sprintf("retraso de %s sobre la hora prevista", ahora.Sub(occ.ScheduledForUTC).Round(time.Minute)))
+		}
+		return nil
+
+	case scheduler.DecisionPending:
+		if run, creada, err := db.CreateRunIfAbsent(taskID, revID(db, taskID), occ.ScheduledForUTC); err == nil && creada {
+			db.Audit(run.ID, taskID, "system", "pendiente_de_decision",
+				`{"motivo":"llegó tarde y la política es manual"}`)
+		}
+		return nil
+	}
+
+	return Ejecutar(ctx, db, d, o, taskID, occ.ScheduledForUTC)
+}
+
+func revID(db *store.DB, taskID string) string {
+	if r, err := db.LatestRevision(taskID); err == nil {
+		return r.ID
+	}
+	return ""
+}
+
+// Ejecutar procesa una ocurrencia concreta. Lo usa EjecutarProgramada con la
+// hora derivada, y el arranque manual con el instante actual: así una prueba a
+// mano no consume la ocurrencia programada de esta noche.
+//
+// Nunca devuelve error por un fallo de la tarea: los fallos de la tarea son
+// estados, no errores del programa. Solo devuelve error si no pudo ni siquiera
+// registrar lo ocurrido.
 func Ejecutar(ctx context.Context, db *store.DB, d Deps, o Opciones,
 	taskID string, ocurrencia time.Time) error {
 
@@ -142,13 +213,13 @@ func Ejecutar(ctx context.Context, db *store.DB, d Deps, o Opciones,
 	defer grupo.Close()
 
 	cmd, err := ad.Comando(adapters.Peticion{
-		Prompt:        rev.Prompt,
-		Modo:          adapters.Modo(task.ConversationMode),
-		NuevaSesionID: uuidDe(run.ID),
-		DirTrabajo:    proj.WorkspacePath,
-		Worktree:      wt.Path,
-		Perfil:        adapters.Perfil(task.PermissionProfile),
-		MaxTurnos:     40,
+		Prompt:         rev.Prompt,
+		Modo:           adapters.Modo(task.ConversationMode),
+		NuevaSesionID:  uuidDe(run.ID),
+		DirTrabajo:     proj.WorkspacePath,
+		Worktree:       wt.Path,
+		Perfil:         adapters.Perfil(task.PermissionProfile),
+		MaxTurnos:      40,
 		MaxPresupuesto: nz(task.MaxBudgetUSD.Float64, task.MaxBudgetUSD.Valid),
 	})
 	if err != nil {

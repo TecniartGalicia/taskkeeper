@@ -529,3 +529,41 @@ Orden de recorte si hiciera falta: primero los flujos encadenados, después la g
 ## 15. Fuera de alcance
 
 Runner remoto, Linux, aplicaciones móviles, equipos y SSO, aprobaciones remotas, comparación de agentes con el mismo prompt y push o despliegue automáticos. Nada de las decisiones anteriores lo bloquea.
+
+
+---
+
+## 20. Ajustes tras la Fase 1
+
+Tres correcciones aplicadas al terminar la Fase 1, todas por cosas que estaban en el sitio equivocado.
+
+### 20.1 «Ejecutar ahora» no puede bloquear
+
+Lanzaba el worker y esperaba a que terminase, así que el botón dejaba la extensión colgada todo lo que durase el agente. Ahora se lanza desatendido y devuelve el control en decenas de milisegundos; el progreso se sigue por la bandeja, igual que en una ejecución nocturna.
+
+Se descartó hacerlo con el disparo del programador (`schtasks /Run`), que era la primera idea: por ahí el worker llegaría con los argumentos registrados y derivaría la hora prevista, que es lo contrario de lo que quiere decir «ahora». Un arranque manual usa el instante actual a propósito, para que probar a mano no consuma la ocurrencia de esta noche.
+
+### 20.2 El cupo de simultáneas vive en la base
+
+Estaba como argumento en la línea de órdenes de cada disparador, así que cambiarlo de uno a dos obligaba a reescribir todos los disparadores registrados: un ajuste, N modificaciones, y la posibilidad de dejar tareas con un cupo distinto de las demás. Ahora es un ajuste de la máquina guardado en `meta`, que cada worker consulta al arrancar. La bandera `--cupo` se queda solo como sobrescritura para diagnóstico.
+
+### 20.3 La ocurrencia se deriva; las dos políticas de retraso dejan de pelearse
+
+Este arrastraba un fallo real. El worker usaba «ahora» como hora de la ocurrencia, con dos consecuencias:
+
+- **No podía saber si llegaba tarde**, así que la política elegida por el usuario nunca se leía. El XML del disparador lleva `StartWhenAvailable`, es decir, la política de Windows —ejecutar al encender, siempre y sin límite—, y esa ganaba en silencio.
+- **La protección contra duplicados no protegía.** Funciona por «esta tarea, a esta hora, una sola vez»; si la hora es siempre «ahora», nunca coincide con nada. Estaba probada pasando la hora a mano, pero en una ejecución real no hacía su trabajo.
+
+Ahora el worker **deriva de qué hora viene** con `scheduler.Previous`, a partir de la regla y la zona de la tarea. De ahí salen las tres cosas:
+
+| | Antes | Ahora |
+|---|---|---|
+| Saber el retraso | Imposible | `ahora − hora prevista` |
+| Política del usuario | Ignorada | Se aplica: omitir, ejecutar si el retraso cabe, o dejar pendiente |
+| Duplicados | Sin protección real | Disparo normal y recuperación son la misma ocurrencia |
+
+Y el reparto con el sistema operativo queda explícito: **Windows nos despierta aunque sea tarde, y nosotros decidimos si merece la pena ejecutar.** Cada uno hace lo que sabe hacer.
+
+Una omisión también deja constancia, con el retraso escrito: que no pasara nada es información, y sin ella el usuario no entiende el silencio de la mañana.
+
+**Efecto secundario en las pruebas:** P-20 empezó a fallar al aplicar esto, porque su tarea era diaria a las 03:00 y a cualquier otra hora del día la ejecución llega tarde y se omite. Se corrigió la prueba, no el código: ahora fija `run_if_late` con una ventana amplia, porque lo que P-20 mide es el disparo y la política tiene sus propias pruebas.

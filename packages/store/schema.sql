@@ -37,6 +37,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   timezone           TEXT NOT NULL,               -- IANA
   next_run_at_utc    TEXT,
   misfire_policy     TEXT NOT NULL DEFAULT 'skip',
+  -- Retraso máximo admitido con la política run_if_late. Sin este dato, esa
+  -- política no se puede aplicar.
+  max_lateness_seconds INTEGER NOT NULL DEFAULT 7200,
   permission_profile TEXT NOT NULL,               -- auditoria | cambios_aislados
   timeout_seconds    INTEGER NOT NULL DEFAULT 3600,
   max_budget_usd     REAL,

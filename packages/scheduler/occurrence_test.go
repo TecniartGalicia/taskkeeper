@@ -47,7 +47,7 @@ func TestCriterio1_TareaUnica(t *testing.T) {
 // próximas ocurrencias.
 func TestCriterio2_SemanalCuatroOcurrencias(t *testing.T) {
 	r := Rule{Type: RuleWeekly, Weekdays: []int{1}, Time: "09:00"} // lunes
-	after := time.Date(2026, 8, 18, 0, 0, 0, 0, time.UTC)         // martes
+	after := time.Date(2026, 8, 18, 0, 0, 0, 0, time.UTC)          // martes
 
 	var got []string
 	for i := 0; i < 4; i++ {

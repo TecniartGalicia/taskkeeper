@@ -24,7 +24,8 @@ func main() {
 	var (
 		taskID     = flag.String("run", "", "identificador de la tarea a ejecutar")
 		ocurrencia = flag.String("occurrence", "", "instante previsto en RFC3339 (por omisión, ahora)")
-		cupo       = flag.Int("cupo", 1, "ejecuciones simultáneas permitidas en la máquina")
+		cupo       = flag.Int("cupo", 0, "sobrescribe el cupo de simultáneas; 0 = usar el ajuste guardado")
+		manual     = flag.Bool("manual", false, "arranque a mano: no deriva la hora prevista")
 		home       = flag.String("home", "", "raíz de datos; el disparador del sistema no hereda el entorno")
 		verVersion = flag.Bool("version", false, "muestra la versión y sale")
 	)
@@ -40,7 +41,9 @@ func main() {
 	}
 
 	cuando := time.Now().UTC()
+	derivar := !*manual
 	if *ocurrencia != "" {
+		derivar = false
 		t, err := time.Parse(time.RFC3339, *ocurrencia)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "instante inválido %q: %v\n", *ocurrencia, err)
@@ -67,11 +70,23 @@ func main() {
 	defer parar()
 
 	o := runner.PorDefecto()
-	o.CupoSimultaneo = *cupo
+	// El cupo es un ajuste de la máquina y vive en la base. Antes iba en la línea
+	// de órdenes de cada disparador, así que cambiarlo obligaba a reescribirlos
+	// todos.
+	o.CupoSimultaneo = db.Cupo()
+	if *cupo > 0 {
+		o.CupoSimultaneo = *cupo
+	}
 	o.DirTurnos = cfg.DirTurnos
 	o.DirWorktrees = cfg.DirWorktrees
 
-	if err := runner.Ejecutar(ctx, db, runner.DepsReales(), o, *taskID, cuando); err != nil {
+	// Sin --occurrence ni --manual, la hora prevista se deriva de la regla: el
+	// disparador del sistema no nos dice de qué hora venimos.
+	ejecutar := runner.Ejecutar
+	if derivar {
+		ejecutar = runner.EjecutarProgramada
+	}
+	if err := ejecutar(ctx, db, runner.DepsReales(), o, *taskID, cuando); err != nil {
 		fmt.Fprintln(os.Stderr, "ejecutando:", err)
 		os.Exit(1)
 	}

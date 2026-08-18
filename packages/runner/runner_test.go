@@ -22,7 +22,7 @@ import (
 
 type agenteFalso struct{ guion string }
 
-func (a *agenteFalso) Nombre() string                       { return "falso" }
+func (a *agenteFalso) Nombre() string { return "falso" }
 func (a *agenteFalso) Detectar() (*adapters.Instalacion, error) {
 	return &adapters.Instalacion{Ruta: "falso", Version: "0"}, nil
 }

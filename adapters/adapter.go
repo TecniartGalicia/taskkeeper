@@ -87,7 +87,7 @@ type Adaptador interface {
 }
 
 var (
-	ErrNoInstalado    = errors.New("agente no encontrado")
+	ErrNoInstalado     = errors.New("agente no encontrado")
 	ErrPerfilProhibido = errors.New("perfil de permisos no admitido")
 )
 

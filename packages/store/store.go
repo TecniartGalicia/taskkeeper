@@ -8,13 +8,14 @@ package store
 import (
 	"crypto/rand"
 	"crypto/sha256"
-	_ "embed"
 	"database/sql"
+	_ "embed"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -45,7 +46,74 @@ func Open(path string) (*DB, error) {
 		sqlDB.Close()
 		return nil, fmt.Errorf("aplicando el esquema: %w", err)
 	}
-	return &DB{sqlDB}, nil
+	db := &DB{sqlDB}
+	if err := db.migrar(); err != nil {
+		sqlDB.Close()
+		return nil, err
+	}
+	return db, nil
+}
+
+// migrar añade columnas a bases creadas por versiones anteriores. SQLite no
+// tiene "ADD COLUMN IF NOT EXISTS", así que se comprueba antes.
+func (db *DB) migrar() error {
+	nuevas := map[string]string{
+		"max_lateness_seconds": "INTEGER NOT NULL DEFAULT 7200",
+	}
+	filas, err := db.Query(`PRAGMA table_info(tasks)`)
+	if err != nil {
+		return err
+	}
+	existentes := map[string]bool{}
+	for filas.Next() {
+		var cid int
+		var nombre, tipo string
+		var nn, dflt, pk any
+		if err := filas.Scan(&cid, &nombre, &tipo, &nn, &dflt, &pk); err != nil {
+			filas.Close()
+			return err
+		}
+		existentes[nombre] = true
+	}
+	filas.Close()
+	for col, def := range nuevas {
+		if !existentes[col] {
+			if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN ` + col + ` ` + def); err != nil {
+				return fmt.Errorf("añadiendo la columna %s: %w", col, err)
+			}
+		}
+	}
+	return nil
+}
+
+// ---------- ajustes de la máquina ----------
+//
+// El cupo de ejecuciones simultáneas es un ajuste del ordenador, uno solo para
+// todo, así que vive aquí y no en la línea de órdenes de cada disparador. Antes
+// cambiarlo obligaba a reescribir todos los disparadores registrados.
+
+const ClaveCupo = "max_concurrent_runs"
+
+func (db *DB) Ajuste(clave, pordefecto string) string {
+	var v string
+	if err := db.QueryRow(`SELECT value FROM meta WHERE key=?`, clave).Scan(&v); err != nil {
+		return pordefecto
+	}
+	return v
+}
+
+func (db *DB) FijarAjuste(clave, valor string) error {
+	_, err := db.Exec(`INSERT INTO meta (key,value) VALUES (?,?)
+	                   ON CONFLICT(key) DO UPDATE SET value=excluded.value`, clave, valor)
+	return err
+}
+
+func (db *DB) Cupo() int {
+	n, err := strconv.Atoi(db.Ajuste(ClaveCupo, "1"))
+	if err != nil || n < 1 {
+		return 1
+	}
+	return n
 }
 
 // ---------- utilidades ----------
@@ -112,6 +180,7 @@ type Task struct {
 	ScheduleRule, Timezone       string
 	NextRunAtUTC                 sql.NullString
 	MisfirePolicy                string
+	MaxLatenessSeconds           int
 	PermissionProfile            string
 	TimeoutSeconds               int
 	MaxBudgetUSD, DailyBudgetUSD sql.NullFloat64
@@ -139,13 +208,13 @@ func (db *DB) CreateTask(t Task, prompt string) (*Task, *Revision, error) {
 	now := Now()
 	if _, err := tx.Exec(`INSERT INTO tasks
 		(id,name,project_id,agent,enabled,conversation_mode,session_ref_id,schedule_rule,
-		 timezone,next_run_at_utc,misfire_policy,permission_profile,timeout_seconds,
-		 max_budget_usd,daily_budget_usd,os_trigger_id,created_at,updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		 timezone,next_run_at_utc,misfire_policy,max_lateness_seconds,permission_profile,
+		 timeout_seconds,max_budget_usd,daily_budget_usd,os_trigger_id,created_at,updated_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Name, t.ProjectID, t.Agent, boolToInt(t.Enabled), t.ConversationMode,
 		t.SessionRefID, t.ScheduleRule, t.Timezone, t.NextRunAtUTC, t.MisfirePolicy,
-		t.PermissionProfile, t.TimeoutSeconds, t.MaxBudgetUSD, t.DailyBudgetUSD,
-		t.OSTriggerID, now, now); err != nil {
+		maxOr(t.MaxLatenessSeconds, 7200), t.PermissionProfile, t.TimeoutSeconds,
+		t.MaxBudgetUSD, t.DailyBudgetUSD, t.OSTriggerID, now, now); err != nil {
 		return nil, nil, err
 	}
 
@@ -169,11 +238,12 @@ func (db *DB) GetTask(id string) (*Task, error) {
 	t := &Task{}
 	var enabled int
 	err := db.QueryRow(`SELECT id,name,project_id,agent,enabled,conversation_mode,session_ref_id,
-		schedule_rule,timezone,next_run_at_utc,misfire_policy,permission_profile,timeout_seconds,
-		max_budget_usd,daily_budget_usd,os_trigger_id FROM tasks WHERE id=?`, id).
+		schedule_rule,timezone,next_run_at_utc,misfire_policy,max_lateness_seconds,
+		permission_profile,timeout_seconds,max_budget_usd,daily_budget_usd,os_trigger_id
+		FROM tasks WHERE id=?`, id).
 		Scan(&t.ID, &t.Name, &t.ProjectID, &t.Agent, &enabled, &t.ConversationMode, &t.SessionRefID,
-			&t.ScheduleRule, &t.Timezone, &t.NextRunAtUTC, &t.MisfirePolicy, &t.PermissionProfile,
-			&t.TimeoutSeconds, &t.MaxBudgetUSD, &t.DailyBudgetUSD, &t.OSTriggerID)
+			&t.ScheduleRule, &t.Timezone, &t.NextRunAtUTC, &t.MisfirePolicy, &t.MaxLatenessSeconds,
+			&t.PermissionProfile, &t.TimeoutSeconds, &t.MaxBudgetUSD, &t.DailyBudgetUSD, &t.OSTriggerID)
 	if err != nil {
 		return nil, err
 	}
@@ -431,6 +501,13 @@ func (db *DB) Inbox() ([]InboxItem, error) {
 }
 
 // ---------- auxiliares ----------
+
+func maxOr(v, pordefecto int) int {
+	if v <= 0 {
+		return pordefecto
+	}
+	return v
+}
 
 func boolToInt(b bool) int {
 	if b {
