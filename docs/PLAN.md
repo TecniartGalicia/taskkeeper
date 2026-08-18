@@ -1,0 +1,531 @@
+# TaskKeeper — Plan de construcción auditado
+
+Argalla · Tecniart Galicia, S.L. · 18 de agosto de 2026 · **v2.0**
+
+Este documento **sustituye** a `11-agent-calendar-orchestrator.md` y `11-PLAN-EJECUCION.md` como fuente única para construir. Aquellos quedan como historia del razonamiento.
+
+Cambia porque el análisis de competencia demostró que la promesa original ya la cumplen tres productos gratuitos, uno de ellos del propio fabricante. Ver `ANALISIS-COMPETENCIA.md`.
+
+---
+
+## 1. Qué es TaskKeeper
+
+> **Tus agentes trabajan de noche sin tocar tu repositorio. Por la mañana revisas el diff y decides.**
+
+No es un calendario. Programar tareas es gratis en Claude Code, en Codex y en varias extensiones. Lo que no ofrece nadie es que ese trabajo ocurra **aislado**, quede **revisable** y no pueda romperte nada.
+
+Las seis capacidades que forman el producto, ninguna disponible hoy en ningún competidor:
+
+| | Capacidad | Por qué importa |
+|---|---|---|
+| 1 | **Worktree aislado por ejecución** | Los demás lanzan el agente sobre tu directorio de trabajo. Si se equivoca de madrugada, se equivoca sobre tu código |
+| 2 | **Bandeja de la mañana con diff y aceptar/rechazar** | Nada llega a tu rama sin que lo mires |
+| 3 | **Retomar o derivar una conversación** | Los demás siempre arrancan en blanco y pierden el contexto |
+| 4 | **Claude y Codex con un solo modelo de seguridad** | Un panel, unos permisos, un historial |
+| 5 | **Presupuesto por ejecución y tope diario** | Una tarea nocturna no puede dejarte sin cuota por la mañana |
+| 6 | **Permisos que de verdad se aplican** | Medido: por defecto el agente arranca con todos los permisos concedidos |
+
+**El núcleo es gratuito.** Ver §11.
+
+---
+
+## 2. Lo que cambia respecto al plan anterior
+
+Un plan que no dice qué tira a la basura no es auditable.
+
+| Decisión anterior | Ahora | Motivo |
+|---|---|---|
+| Demonio persistente con su propio reloj | **Sin demonio.** Dispara el programador del sistema | Windows Task Scheduler ya da durabilidad, supervivencia al reinicio y despertar. Reimplementarlo era trabajo y riesgo gratis |
+| Named Pipe con SDDL para el canal | **Descartado.** La extensión lee la base local | Sin demonio no hay con quién hablar. El código queda en el repositorio, sin uso, documentado como tal |
+| Mutex de instancia única | **Innecesario** para el demonio; se reaprovecha la idea para el tope de concurrencia | No hay proceso único que proteger |
+| macOS en la fase 6, tras publicar | **Fase 3**, antes de publicar | Sin demonio, macOS es `launchd` en lugar de Task Scheduler y el resto es portable. Deja de ser caro |
+| Suscripción de 8–10 €/mes | **Gratis** el núcleo | Tres competidores gratuitos. Cobrar por programar era una conversación perdida |
+| El calendario es la cara del producto | **La bandeja de la mañana** es la cara | El calendario es el mecanismo, no el valor |
+| 9–11 semanas | **6–7 semanas** | Consecuencia de todo lo anterior |
+
+**Lo que se conserva de la Fase 0**, ya escrito y probado:
+
+- `packages/scheduler` — cálculo de ocurrencias con zonas y cambios de hora. Sigue siendo necesario para traducir nuestro modelo de calendario a disparadores del sistema y para mostrar las próximas ejecuciones. 6 pruebas.
+- `packages/platform/windows/job.go` — Job Object. Sigue siendo necesario: cada ejecución mata su propia jerarquía de procesos. 2 pruebas.
+- Todos los hallazgos de `docs/fase-0/RESULTADOS.md`.
+
+Se descarta `ipc.go` y sus 3 pruebas. Se hicieron, funcionan, y la arquitectura correcta ya no los necesita. Queda anotado aquí para que nadie los reviva sin motivo.
+
+---
+
+## 3. Decisiones cerradas
+
+| # | Decisión | Motivo | Se verifica con |
+|---|---|---|---|
+| D1 | **Worker en Go**, extensión en TypeScript | Binario estático sin tiempo de ejecución instalado; Job Objects nativos; compila para macOS desde la misma máquina | P-01 ✅ |
+| D2 | **Sin demonio.** El programador del sistema dispara un worker por ejecución | Durabilidad, reinicio y despertar salen gratis del sistema operativo | P-20 |
+| D3 | **Una tarea del sistema por tarea de TaskKeeper**, en su propia carpeta, sin tocar nada ajeno | Permite borrar y editar sin efectos colaterales | P-21 |
+| D4 | **Job Object** con `KILL_ON_JOB_CLOSE` por ejecución | `taskkill /T` no alcanza a un nieto huérfano | P-01 ✅ |
+| D5 | **SQLite en modo WAL**, escritores múltiples breves, lectores concurrentes | Sin demonio no hay escritor único; WAL lo admite | P-22 |
+| D6 | **Turnos por ficheros de bloqueo**, N ficheros = N ejecuciones simultáneas | Portable a macOS sin API específica; sin proceso coordinador | P-23 |
+| D7 | **Cancelación por bandera en la base**, sondeada por el worker | Sin canal no hace falta canal | P-24 |
+| D8 | Descubrimiento de sesiones: Claude en la extensión, Codex en el worker | El SDK de Claude solo existe en TypeScript; Codex habla un protocolo | P-03 ✅ |
+| D9 | **Detección de agentes en cada preflight**, por patrón, nunca por PATH | Medido: ninguno está en el PATH y la ruta caduca al actualizar | P-00 ✅ |
+| D10 | **Neutralizar la configuración ambiente** siempre | Medido: por defecto arranca en `bypassPermissions` con 16 permisos | P-06 ✅ |
+| D11 | **Cortar al primer 401**, no esperar los diez reintentos | Medido: una credencial caducada tarda minutos en rendirse | P-06 ✅ |
+| D12 | Codex por **App Server**, con `codex exec` de respaldo | `thread/fork` y `turn/interrupt` solo existen ahí | P-19 |
+| D13 | **Núcleo gratuito**, equipos de pago más adelante | Tres competidores gratuitos | Decisión de producto |
+
+---
+
+## 4. Arquitectura sin demonio
+
+```text
+                 Programador del sistema
+        (Task Scheduler en Windows · launchd en macOS)
+                          │  dispara a su hora, despierta el equipo,
+                          │  sobrevive al reinicio
+                          ▼
+                 taskkeeper-worker.exe --run <task-id>
+                          │
+        ┌─────────────────┼──────────────────┐
+        ▼                 ▼                  ▼
+   turno libre?      worktree Git      Job Object
+   (fichero de       aislado desde     mata toda la
+    bloqueo)         el commit base    descendencia
+                          │
+                          ▼
+                Adaptador Claude / Codex
+                          │
+                          ▼
+                 SQLite (WAL) ── eventos, estado, coste
+                          │
+                          ▼
+              Extensión de VS Code (solo lectura)
+              bandeja · diff · aceptar / rechazar
+```
+
+Tres ejecutables, ninguno residente:
+
+| Pieza | Cuándo corre | Qué hace |
+|---|---|---|
+| `taskkeeper-worker` | Lo lanza el programador del sistema, o «Ejecutar ahora» | Una ejecución de principio a fin |
+| `taskkeeper-ctl` | Lo lanza la extensión | Alta, baja y edición de tareas; registra y retira disparadores |
+| Extensión | Con VS Code abierto | Interfaz. Lee la base; nunca lanza agentes |
+
+**Lo que se gana:** no hay proceso que pueda estar muerto cuando llegue la hora. Es el fallo que hundiría el producto y ahora no puede ocurrir.
+
+**Lo que se pierde:** no hay un coordinador central. Se resuelve con el fichero de turno (§6.2) y con la clave de idempotencia, que ya estaba.
+
+---
+
+## 5. Modelo de datos
+
+Cambios respecto al anterior, en negrita:
+
+```sql
+PRAGMA journal_mode = WAL;          -- imprescindible: varios escritores breves
+PRAGMA busy_timeout = 5000;         -- un worker no debe fallar por contención
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE tasks (
+  id                  TEXT PRIMARY KEY,
+  name                TEXT NOT NULL,
+  project_id          TEXT NOT NULL REFERENCES projects(id),
+  agent               TEXT NOT NULL,              -- claude | codex
+  enabled             INTEGER NOT NULL DEFAULT 1,
+  conversation_mode   TEXT NOT NULL,              -- new | resume | fork
+  session_ref_id      TEXT REFERENCES session_refs(id),
+  schedule_rule       TEXT NOT NULL,              -- JSON: once|daily|weekly
+  timezone            TEXT NOT NULL,              -- IANA
+  next_run_at_utc     TEXT,
+  misfire_policy      TEXT NOT NULL,
+  permission_profile  TEXT NOT NULL,
+  timeout_seconds     INTEGER NOT NULL,
+  max_budget_usd      REAL,
+  daily_budget_usd    REAL,
+  -- Identificador del disparador registrado en el sistema, para poder
+  -- retirarlo exactamente y no tocar nada más.
+  os_trigger_id       TEXT,
+  created_at          TEXT NOT NULL,
+  updated_at          TEXT NOT NULL
+);
+
+CREATE TABLE runs (
+  id                  TEXT PRIMARY KEY,
+  task_id             TEXT NOT NULL REFERENCES tasks(id),
+  task_revision_id    TEXT NOT NULL REFERENCES task_revisions(id),
+  scheduled_for_utc   TEXT NOT NULL,
+  idempotency_key     TEXT NOT NULL,
+  status              TEXT NOT NULL,
+  started_at          TEXT,
+  finished_at         TEXT,
+  provider_session_id TEXT,
+  provider_turn_id    TEXT,                       -- necesario para turn/interrupt
+  worktree_path       TEXT,
+  worktree_branch     TEXT,
+  base_commit         TEXT,
+  exit_code           INTEGER,
+  cost_usd            REAL,
+  stop_subtype        TEXT,
+  quota_reset_at      TEXT,
+  summary             TEXT,
+  error_code          TEXT,
+  -- Cancelación sin canal: la extensión pone la bandera, el worker la sondea.
+  cancel_requested    INTEGER NOT NULL DEFAULT 0,
+  -- Revisión humana.
+  review_decision     TEXT,                       -- accepted | rejected | null
+  review_at           TEXT,
+  retry_of_run_id     TEXT REFERENCES runs(id)
+);
+
+CREATE UNIQUE INDEX idx_runs_idempotency ON runs(idempotency_key);
+CREATE INDEX idx_runs_bandeja ON runs(status, finished_at DESC);
+
+-- Evidencia (recomendación 7). Se escribe desde el primer día porque
+-- añadirla tarde obliga a rediseñar.
+CREATE TABLE audit (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id        TEXT REFERENCES runs(id),
+  at            TEXT NOT NULL,
+  actor         TEXT NOT NULL,        -- system | user
+  action        TEXT NOT NULL,        -- created | started | accepted | rejected | cancelled
+  detail_json   TEXT NOT NULL         -- perfil, permisos efectivos, commit, coste
+);
+```
+
+---
+
+## 6. La ejecución
+
+### 6.1 Ciclo completo del worker
+
+```go
+// taskkeeper-worker --run <task-id> [--occurrence <rfc3339>]
+func Run(ctx context.Context, taskID string, occurrence time.Time) error {
+	db := store.MustOpen(cfg.DBPath)
+	defer db.Close()
+
+	task, rev := store.LoadTaskAndRevision(db, taskID)
+
+	// 1. Idempotencia. El índice único es la barrera real: si dos disparos
+	//    coinciden (recuperación tras reinicio más disparo normal), el segundo
+	//    insert falla y ese proceso se retira sin hacer nada.
+	run, created := store.CreateRunIfAbsent(db, task, rev, occurrence)
+	if !created {
+		return nil
+	}
+
+	// 2. Turno. Sin coordinador central, el cupo global se reparte con
+	//    ficheros de bloqueo (§6.2).
+	slot, err := turns.Acquire(cfg.MaxConcurrent, cfg.SlotDir, 30*time.Minute)
+	if err != nil {
+		store.Transition(db, run, StateSkipped, "sin turno libre")
+		return nil
+	}
+	defer slot.Release()
+
+	// 3. Preflight. Cualquier fallo aquí es seguro: no se ha lanzado nada.
+	if err := preflight(ctx, db, run, task); err != nil {
+		store.Transition(db, run, classifyPreflight(err), err.Error())
+		return nil
+	}
+
+	// 4. Worktree desde el commit resuelto, no desde la rama: un push ajeno
+	//    entre medias no debe cambiar la base.
+	wt, err := git.CreateWorktree(ctx, task.Project, run)
+	if err != nil {
+		store.Transition(db, run, StateFailed, err.Error())
+		return nil
+	}
+
+	// 5. El agente, dentro de su Job Object.
+	job, _ := platform.NewProcessGroup()
+	defer job.Close() // KILL_ON_JOB_CLOSE: red de seguridad si el worker muere
+
+	cmd, err := adapters.For(task.Agent).Command(buildRequest(task, rev, wt))
+	if err != nil {
+		store.Transition(db, run, StateFailed, err.Error())
+		return nil
+	}
+	job.Prepare(cmd)
+	if err := cmd.Start(); err != nil { ... }
+	job.Adopt(cmd.Process.Pid)
+
+	store.Transition(db, run, StateRunning, "")
+
+	// 6. Consumir el flujo, clasificando y vigilando la cancelación.
+	outcome := consume(ctx, db, run, cmd, job, task.TimeoutSeconds)
+
+	// 7. Verificaciones y diff, si el agente terminó bien.
+	if outcome.State == StateVerifying {
+		outcome = verify(ctx, db, run, wt, rev.Checks)
+	}
+
+	store.Finish(db, run, outcome)
+	audit.Write(db, run, "system", string(outcome.State), outcome.Detail)
+	return nil
+}
+```
+
+### 6.2 Turnos sin coordinador
+
+El plan anterior confiaba el cupo global al demonio. Sin demonio hace falta algo que funcione entre procesos y en las dos plataformas. La solución más simple que cumple: **N ficheros, N turnos.**
+
+```go
+// Acquire intenta hacerse con uno de los N ficheros de turno en exclusiva.
+// Portable: en Windows la exclusividad la da el modo de apertura; en macOS,
+// flock. No hace falta ningún proceso coordinador.
+func Acquire(n int, dir string, wait time.Duration) (*Slot, error) {
+	deadline := time.Now().Add(wait)
+	for {
+		for i := 0; i < n; i++ {
+			p := filepath.Join(dir, fmt.Sprintf("turno-%d.lock", i))
+			if f, ok := tryExclusive(p); ok {
+				return &Slot{f: f}, nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return nil, ErrSinTurno
+		}
+		time.Sleep(5 * time.Second)
+	}
+}
+```
+
+Un worker que muere sin liberar deja de mantener el bloqueo porque el sistema operativo cierra el descriptor: **no quedan turnos huérfanos**, que era el problema clásico de esta técnica con ficheros marcador.
+
+### 6.3 Cancelación y clasificación
+
+```go
+func consume(ctx context.Context, db *sql.DB, run *Run, cmd *exec.Cmd,
+             job platform.ProcessGroup, timeout int) Outcome {
+	sc := bufio.NewScanner(stdout)
+	sc.Buffer(make([]byte, 1024*1024), 8*1024*1024) // líneas JSON largas
+	deadline := time.After(time.Duration(timeout) * time.Second)
+	tick := time.NewTicker(3 * time.Second) // sondeo de cancelación
+	defer tick.Stop()
+
+	for {
+		select {
+		case <-tick.C:
+			if store.CancelRequested(db, run.ID) {
+				job.KillAll()
+				return Outcome{State: StateCancelled}
+			}
+		case <-deadline:
+			job.KillAll()
+			return Outcome{State: StateFailed, Code: "timeout"}
+		default:
+		}
+
+		if !sc.Scan() { break }
+		ev, ok := adapter.ParseLine(sc.Bytes())
+		if !ok { continue }
+		store.AppendEvent(db, run, ev)
+
+		// Medido en Fase 0: una credencial caducada NO falla, se reintenta
+		// diez veces con espera creciente. Se corta al primero.
+		if ev.Type == EventAPIRetry {
+			switch ev.ErrorStatus {
+			case 401:
+				job.KillAll()
+				return Outcome{State: StateFailedAuth, Code: ev.ErrorCode}
+			case 429:
+				job.KillAll()
+				return Outcome{State: StateFailedQuota, RetryAt: ev.ResetAt}
+			}
+		}
+	}
+	return classifyTerminal(cmd.Wait(), lastEvent)
+}
+```
+
+---
+
+## 7. Registro en el programador del sistema
+
+Nuestro modelo de calendario se traduce a un disparador nativo. `packages/scheduler` sigue calculando ocurrencias para mostrarlas y para las reglas que el sistema no sabe expresar.
+
+**Windows.** Una tarea por tarea de TaskKeeper, bajo la carpeta `Argalla\TaskKeeper`. Del hallazgo de la Fase 0: el XML **necesita `<UserId>` real** o falla con un engañoso «Acceso denegado».
+
+```go
+func Register(t *Task) error {
+	uid, err := platform.CurrentUserPrincipal() // "ARGALLA\\kirne", nunca %USERNAME%
+	if err != nil { return err }
+	xml := renderTaskXML(taskXMLParams{
+		UserID:     uid,
+		Trigger:    triggerFor(t.ScheduleRule, t.Timezone),
+		WakeToRun:  true,
+		Command:    cfg.WorkerPath,
+		Arguments:  "--run " + t.ID,
+		Instances:  "IgnoreNew", // el propio sistema evita el solape
+	})
+	return schtasks.CreateFromXML(`Argalla\TaskKeeper\`+t.ID, xml)
+}
+```
+
+Reglas de convivencia, copiadas de lo que la competencia hace bien:
+
+- Solo se tocan las tareas de nuestra carpeta. Nada más del Programador se modifica.
+- Editar una tarea regenera su disparador; borrarla lo retira.
+- El preflight avisa si los temporizadores de reactivación no permiten despertar: **tri-estado**, y el valor «solo temporizadores importantes» tampoco sirve.
+
+**macOS.** Un agente de `launchd` por tarea, con `StartCalendarInterval`. Ejecuta al despertar las ocurrencias perdidas, pero no despierta el Mac: se dice en el asistente, no en la letra pequeña.
+
+---
+
+## 8. La bandeja de la mañana
+
+Es la cara del producto y la pantalla de la demostración.
+
+```
+┌─ TASKKEEPER ─────────────────────────────────────────────┐
+│  ANOCHE                                                  │
+│                                                          │
+│  ● Mantenimiento semanal · besbello-web        03:15     │
+│    12 archivos · tests 48/48 ✓ · 0,42 €                  │
+│    «Actualizadas 7 dependencias menores…»                │
+│    [ Ver diff ]     [ Aceptar ]  [ Rechazar ]            │
+│                                                          │
+│  ▲ Revisión de PR · alphawolf-ios              04:00     │
+│    Cuota agotada · reintento a las 09:00                 │
+│                                                          │
+│  ○ Auditoría diaria · ponktio               en curso ⟳   │
+└──────────────────────────────────────────────────────────┘
+```
+
+Consulta que la alimenta:
+
+```sql
+SELECT r.*, t.name, p.name AS proyecto
+FROM runs r
+JOIN tasks t ON t.id = r.task_id
+JOIN projects p ON p.id = t.project_id
+WHERE r.review_decision IS NULL
+  AND r.status IN ('awaiting_review','failed','failed_quota',
+                   'failed_auth','failed_verification','running')
+ORDER BY r.finished_at DESC NULLS FIRST;
+```
+
+**Aceptar** funde la rama del worktree en la rama base del checkout principal, **en local y nunca con push**, y limpia el worktree. **Rechazar** borra worktree y rama sin dejar rastro. Las dos acciones escriben en `audit`.
+
+El diff se abre con el visor nativo de VS Code (`vscode.diff`). No se construye un visor propio.
+
+La extensión detecta cambios observando el fichero de la base y una marca que el worker toca al terminar. Latencia de menos de un segundo sin sondeo activo.
+
+---
+
+## 9. Seguridad
+
+Los perfiles, ya corregidos con lo medido en la Fase 0:
+
+| Perfil | Claude Code | Codex |
+|---|---|---|
+| **Auditoría** | `--permission-mode default --settings <perfil> --allowedTools "Read" "Glob" "Grep" --disallowedTools "Edit" "Write" "Bash"` | `-s read-only --ignore-user-config` |
+| **Cambios aislados** | `--permission-mode acceptEdits --settings <perfil> --add-dir <worktree>` con patrones acotados | `-s workspace-write --ignore-user-config --cd <worktree>` |
+
+Reglas que el código hace cumplir, no solo el documento:
+
+1. **`--settings` e `--ignore-user-config` son obligatorios.** Medido: sin ellos el agente arranca con `bypassPermissions` y 16 permisos concedidos por la configuración del usuario.
+2. Modos prohibidos por **modo**, no por alias: `bypassPermissions`, `auto`, `dontAsk`. En Codex, nunca `--dangerously-bypass-approvals-and-sandbox`.
+3. Argumentos como matriz, jamás como cadena de shell.
+4. Redacción de secretos en el **único** escritor de eventos, para que ningún camino la evite.
+5. El preflight comprueba que el espacio de trabajo es **de confianza**; si no, la tarea de escritura no se programa.
+
+---
+
+## 10. Multiplataforma
+
+Una interfaz, dos implementaciones, ambas en el lanzamiento:
+
+| Necesidad | Windows | macOS |
+|---|---|---|
+| Disparo | Task Scheduler, `WakeToRun` | `launchd`, `StartCalendarInterval` |
+| Matar la jerarquía | Job Object `KILL_ON_JOB_CLOSE` | Grupo de procesos, `kill(-pgid)` |
+| Turnos | Ficheros de bloqueo | Ficheros de bloqueo (`flock`) |
+| Despertar el equipo | **Sí**, si la energía lo permite | **No**: ejecuta al despertar |
+
+La última fila es la única diferencia visible para el usuario y se declara en el asistente y en la ficha de tienda.
+
+---
+
+## 11. Gratis
+
+**Núcleo gratuito y sin recortes**, para siempre: los dos agentes, tareas ilimitadas, worktrees, bandeja de revisión, historial completo y control de gasto. Sin límite de tres tareas, sin historial de siete días, sin funciones capadas.
+
+Motivo: hay tres alternativas gratuitas. Cobrar por programar era perder la conversación antes de empezarla. Y el problema real hoy no es monetizar —las tres extensiones publicadas de Argalla suman cinco instalaciones— sino que alguien las use.
+
+**Lo que se cobrará más adelante**, cuando haya usuarios y solo sobre lo que una persona sola no necesita:
+
+- Políticas de permisos compartidas por equipo.
+- Plantillas de tarea de la organización.
+- Auditoría central y exportable, que es el motivo por el que la tabla `audit` se escribe desde hoy.
+- Panel de gasto por proyecto y por cliente.
+
+**Consecuencia en el plan:** la licencia de Polar sale del camino crítico. La Fase 5 se reduce a publicar.
+
+---
+
+## 12. Fases
+
+| Fase | Duración | Entregable | Criterio de salida |
+|---|---|---|---|
+| **0. Prueba técnica** | ✅ **Hecha** | 9 puertas resueltas, scheduler y Job Object escritos | Cerrada |
+| **1. Ejecución** | 2 sem | Una tarea real, disparada por el sistema, en su worktree | P-20…P-24 en verde; el checkout principal intacto |
+| **2. Bandeja** | 2 sem | La pantalla de la mañana, con diff y aceptar/rechazar | Aceptar funde y limpia; rechazar no deja rastro |
+| **3. Seguridad y macOS** | 1,5 sem | Perfiles aplicados y el mismo VSIX en un Mac | Ningún secreto en registros; suite verde en las dos plataformas |
+| **4. Beta** | 1 sem | Cinco personas de fuera instalándolo | Cinco instalaciones limpias sin ayuda |
+| **5. Publicación** | 0,5 sem | Marketplace y Open VSX, gratis | Ficha con las limitaciones declaradas |
+
+**6–7 semanas de trabajo efectivo.** La validación con usuarios sigue siendo puerta de entrada a la Fase 1.
+
+Orden de recorte si hiciera falta: primero los flujos encadenados, después la gestión de las tareas nativas de Claude, después Codex. **Nunca** el worktree ni la bandeja: son el producto.
+
+---
+
+## 13. Pruebas
+
+| Id | Comprueba | Cierra |
+|---|---|---|
+| P-01 ✅ | El Job Object mata al nieto huérfano | D4 |
+| P-03 ✅ | `listSessions` devuelve sesiones reales | D8 |
+| P-05 ✅ | Cambios de hora y zonas, 6 casos | Calendario |
+| P-06 ✅ | Cuota y credencial se distinguen; se corta al primer 401 | D10, D11 |
+| P-20 | Una tarea registrada se dispara sola con VS Code cerrado | D2 |
+| P-21 | Editar y borrar una tarea no toca ninguna otra del sistema | D3 |
+| P-22 | Dos workers simultáneos escriben sin corromper la base | D5 |
+| P-23 | Con un turno, dos ejecuciones se serializan; un worker muerto libera el suyo | D6 |
+| P-24 | La bandera de cancelación detiene el proceso y su descendencia | D7 |
+| P-25 | Aceptar funde en la rama base sin hacer push; rechazar no deja rastro | Bandeja |
+| P-26 | Ningún secreto inyectado aparece en base, registros ni avisos | Seguridad |
+| P-27 | El agente no puede escribir fuera de su worktree | Producto |
+| P-19 | `thread/fork` de Codex crea un hilo nuevo sin alterar el original | D12 |
+| P-28 | La misma suite pasa en macOS | Multiplataforma |
+
+---
+
+## 14. Auditoría del plan
+
+| Riesgo | Control | Prueba |
+|---|---|---|
+| El disparador no salta a su hora | Lo registra el sistema operativo, no un proceso nuestro | P-20 |
+| Procesos huérfanos tras cancelar | Job Object con cierre por destrucción | P-01 ✅ |
+| Dos ejecuciones a la vez corrompen la base | WAL más `busy_timeout`, escrituras breves | P-22 |
+| Un worker muerto bloquea el cupo para siempre | El bloqueo lo suelta el sistema al cerrar el descriptor | P-23 |
+| Credencial caducada consume el tiempo límite | Corte al primer 401 | P-06 ✅ |
+| El agente arranca con más permisos de los previstos | `--settings` e `--ignore-user-config` obligatorios | P-26, P-27 |
+| Un agente toca el repositorio principal | Worktree desde el commit resuelto, `--add-dir` acotado | P-27 |
+| Aceptar por error mete cambios malos | El diff se revisa antes; nunca hay push automático | P-25 |
+| Ensuciar el Programador del sistema | Carpeta propia, se toca solo lo creado | P-21 |
+| El fabricante mejora su programación nativa | El valor no es programar: es el aislamiento y la revisión | Posicionamiento |
+| Nadie quiere el producto | Validación previa, y con el producto gratis la señal es la retención a la segunda semana | Entrevistas |
+
+### Puntos débiles que este plan reconoce
+
+1. **Sin demonio no hay coordinación fina.** El cupo por ficheros de turno es correcto pero tosco: no hay prioridades ni cola ordenada. Si eso hiciera falta, vuelve el demonio, y sería un cambio grande.
+2. **La latencia de la interfaz depende de observar un fichero.** Cumple el segundo exigido, pero no es un canal de verdad. Si el uso pide más, hay que reabrir la decisión.
+3. **En macOS el equipo no se despierta.** Se declara; no se disimula.
+4. **`codex app-server` es experimental y va por una alfa.** La degradación a `codex exec` hay que ejercitarla en las pruebas, no darla por hecha.
+5. **Superior no es lo mismo que querido.** El producto será mejor que todo lo que hay. Eso no demuestra que exista demanda.
+
+---
+
+## 15. Fuera de alcance
+
+Runner remoto, Linux, aplicaciones móviles, equipos y SSO, aprobaciones remotas, comparación de agentes con el mismo prompt y push o despliegue automáticos. Nada de las decisiones anteriores lo bloquea.

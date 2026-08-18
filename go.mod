@@ -1,4 +1,4 @@
-module github.com/argalla/agent-calendar
+module github.com/argalla/taskkeeper
 
 go 1.26.6
 
