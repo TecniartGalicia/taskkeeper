@@ -143,3 +143,32 @@ Salvedad: `app-server` sigue marcado `[experimental]` en la ayuda del binario, y
 3. **Comprobación de temporizadores**, plan §8.3: usar el alias `RTCWAKE` y tratar el valor `2` como «no despertará».
 4. **Adaptador de Codex**, ficha §17 y plan §10.2: generar los tipos del esquema del proveedor; guardar `turnId` para poder interrumpir; aprovechar `lastTurnId` en el fork.
 5. **Matriz de versiones**, ficha §21: Codex instalado es una alfa y `app-server` es experimental.
+
+---
+
+## Adenda · ¿Hace falta suspender el equipo para cerrar P-02?
+
+**No, y en esta máquina además sería poco concluyente.**
+
+P-02 tenía que demostrar tres cosas. Dos ya están demostradas sin suspender nada:
+
+1. Que la tarea se registra con `WakeToRun` y sin elevación → **probado**.
+2. Que los temporizadores de reactivación dependen de la fuente de alimentación → **probado**: AC=1, DC=0.
+3. Que el equipo despierta y ejecuta → no probado.
+
+Sobre lo tercero, dos datos:
+
+- `powercfg /lastwake` devuelve **«Recuento de historial de activación - 0»**: esta máquina no ha despertado nunca de una suspensión. `powercfg /waketimers`, que listaría los temporizadores armados, **exige elevación** y no sirve como comprobación desde el producto.
+- La máquina usa **Modern Standby (S0) con red conectada y no tiene S3**. En S0 el sistema no se suspende del todo: sigue funcionando a bajo consumo y el Programador de tareas puede disparar sin necesidad de un despertar por RTC. Es decir, **medir aquí diría poco sobre las máquinas con S3**, que son las que de verdad dependen del mecanismo que P-02 quiere validar.
+
+Decisión: **no se fuerza una suspensión**. En su lugar queda instalada una sonda pasiva:
+
+```
+Tarea:  ACWakeProbe   ·  diaria 03:15  ·  WakeToRun activado
+Acción: anota fecha y hora en docs/fase-0/wake-log.txt
+Borrar: schtasks /Delete /TN ACWakeProbe /F
+```
+
+Si alguna noche el equipo entra en reposo por sí solo, el registro lo dirá sin intervención. Cada línea del fichero es una ejecución nocturna real.
+
+**Cuándo sí será imprescindible:** en la Fase 4, con un runner de verdad al que despertar y sobre una máquina con S3, idealmente de un probador externo con hardware más antiguo. Forzar una suspensión ahora solo demostraría que `cmd.exe` se ejecuta.

@@ -2,3 +2,4 @@ dist/
 node_modules/
 *.exe
 .tmp/
+docs/fase-0/wake-log.txt
