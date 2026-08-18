@@ -12,10 +12,12 @@ Puertas de la Fase 0 según el plan de ejecución. Una puerta cerrada significa 
 | P-02 Tarea de reactivación | 🟡 **Verde parcial** | Registro y `WakeToRun` verificados; falta la suspensión real |
 | Codex: protocolo y fork | ✅ **Verde** | `thread/fork` confirmado a nivel de esquema, no solo de documentación |
 | P-00 Detección de agentes | ⚠️ **Verde con hallazgo grave** | FR-001 hay que reescribirla |
-| P-03 Listado de sesiones de Claude | ⏳ Pendiente | |
-| P-06 Cuota y credencial | ⏳ Pendiente | |
-| P-04 Aislamiento del canal | ⏳ Pendiente | |
-| Condiciones de uso | ⏳ Pendiente | Informe antes de la Fase 1 |
+| P-03 Listado de sesiones de Claude | ✅ **Verde** | 95 sesiones reales; el SDK normaliza rutas |
+| P-06 Cuota y credencial | ⚠️ **Verde con hallazgo grave** | El fallo de credencial se reintenta 10 veces: hay que cortarlo |
+| P-04 Aislamiento del canal | ✅ **Verde** | Sin puerto TCP; segundo servidor rechazado |
+| Condiciones de uso | ✅ **Verde** | Informe en `CONDICIONES-USO.md`, con una lectura humana pendiente |
+
+**Fase 0 cerrada.** Nueve puertas resueltas: seis en verde, dos en verde con hallazgo que corrige el diseño, una en verde parcial cuya medición restante solo tiene sentido en otro hardware.
 
 ---
 
@@ -172,3 +174,134 @@ Borrar: schtasks /Delete /TN ACWakeProbe /F
 Si alguna noche el equipo entra en reposo por sí solo, el registro lo dirá sin intervención. Cada línea del fichero es una ejecución nocturna real.
 
 **Cuándo sí será imprescindible:** en la Fase 4, con un runner de verdad al que despertar y sobre una máquina con S3, idealmente de un probador externo con hardware más antiguo. Forzar una suspensión ahora solo demostraría que `cmd.exe` se ejecuta.
+
+
+---
+
+## P-03 · Listado de sesiones de Claude — verde
+
+`listSessions` del Agent SDK devuelve **95 sesiones reales** de esta máquina. Campos disponibles:
+
+```
+sessionId · summary · customTitle · firstPrompt · gitBranch · cwd · tag · createdAt · lastModified · fileSize
+```
+
+Más de lo previsto: `gitBranch` y `tag` sirven directamente para el selector, y `firstPrompt` para la vista previa sin abrir el transcrito.
+
+Dos comprobaciones que evitan trabajo inútil:
+
+1. **El SDK normaliza la ruta.** `C:\Users\kirne`, `c:\users\kirne` y `C:/Users/kirne` devuelven las mismas 95 sesiones. La extensión no tiene que normalizar mayúsculas ni barras.
+2. **El SDK no devuelve el directorio codificado.** No hay campo `projectDir`. Como el runner necesita esa ruta para validar que el transcrito sigue existiendo, se resuelve **buscando el fichero por patrón** una sola vez:
+
+   ```
+   ~/.claude/projects/*/<sessionId>.jsonl
+   ```
+
+   Verificado: la sesión `1bce5e08…` aparece en `C--Users-kirne/`. Buscar el fichero es más robusto que reimplementar la regla de codificación, que además trunca y añade un hash a partir de 200 caracteres. En esta máquina la carpeta más larga ya mide 118.
+
+   Detalle: conviven `C--Users-kirne` y `c--Users-kirne-Desktop-Apps-peneira`. La carpeta **conserva la caja del `cwd` con que se creó la sesión**, así que la búsqueda por patrón debe ser insensible a mayúsculas.
+
+## P-04 · Aislamiento del canal — verde
+
+Named Pipe con descriptor de seguridad explícito `D:P(A;;GA;;;<SID>)`, sobre `go-winio`.
+
+```
+canal: \\.\pipe\Argalla.AgentCalendar.S-1-5-21-…-1001
+PASS  TestCanalSoloParaElUsuario        ida y vuelta correcta para el propietario
+PASS  TestCanalNoAdmiteDosServidores    el segundo servidor recibe "Acceso denegado"
+PASS  TestNoSeAbrePuertoTCP             la dirección no es TCP: winio.pipeAddress
+```
+
+Tres consecuencias:
+
+1. **No hay puerto TCP**, así que la superficie que motivó descartar HTTP en `127.0.0.1` —una página abierta en el navegador del usuario hablando con el runner— sencillamente no existe.
+2. **El nombre del canal no admite dos servidores.** Es una segunda barrera de instancia única, gratis, además del mutex. Se conservan las dos: el mutex protege del solapamiento entre procesos aunque el canal aún no esté abierto.
+3. El SID en el nombre evita que dos sesiones simultáneas de Windows compartan canal.
+
+Recordatorio honesto: la frontera es la **cuenta de usuario**. Otro proceso del mismo usuario puede conectarse, y ningún secreto compartido lo evitaría porque ese proceso también podría leerlo. Es la misma frontera que protege las credenciales de los propios CLI.
+
+## P-06 · Cuota y credencial — verde con hallazgo grave
+
+Provocado en un entorno aislado (`CLAUDE_CONFIG_DIR` a un directorio vacío y clave inválida), sin tocar las credenciales reales.
+
+### 1. La señal es estructurada, no un mensaje de texto
+
+El fallo de autenticación **no hay que buscarlo con expresiones regulares en la salida de error**. Llega como evento del flujo:
+
+```json
+{"type":"system","subtype":"api_retry","attempt":8,"max_retries":10,
+ "retry_delay_ms":38052,"error_status":401,"error":"authentication_failed"}
+```
+
+Esto mejora el diseño: `error_status` y `error` son campos, no prosa traducible. La tabla de patrones de texto pasa a ser el último recurso, no el primero.
+
+### 2. **Una credencial caducada no falla: se reintenta durante minutos**
+
+Diez reintentos con espera creciente. En la sonda, el intento 8 esperaba **38 segundos** antes del siguiente. La ejecución agotó el tiempo límite de 90 segundos sin llegar a terminar por sí sola.
+
+Consecuencia directa para el runner, que el plan no contemplaba: **al primer `api_retry` con `error_status: 401` hay que cortar el proceso y marcar `failed_auth`.** Si no, cada tarea con la credencial caducada consume su timeout completo, y una tarea nocturna con timeout de una hora se pasa la noche reintentando contra una pared.
+
+### 3. El modo de permisos por defecto era `bypassPermissions`
+
+Sin pasar `--permission-mode`, el proceso hijo arrancó con **`bypassPermissions`**, el modo que la especificación prohíbe. No venía del entorno: lo aportaba la configuración del propio usuario, que además tenía 16 entradas de permisos concedidos.
+
+Verificado que la defensa funciona:
+
+```
+--permission-mode default --disallowedTools "Bash" "Edit" "Write"
+  → permissionMode = default
+  → Bash, Edit y Write ausentes de la lista de herramientas (22 restantes)
+```
+
+Pero la lección es que **el perfil de seguridad no puede confiar en los valores por defecto**: tiene que fijar el modo explícitamente en cada lanzamiento, y además **neutralizar la configuración ambiente del usuario**, que puede conceder más de lo que el perfil pretende.
+
+Cada proveedor tiene su mecanismo, y los dos hay que usarlos:
+
+| Proveedor | Neutralizar configuración ambiente |
+|---|---|
+| Claude Code | `--settings <fichero controlado>` |
+| Codex | `--ignore-user-config` |
+
+### 4. Espacio de trabajo no confiado
+
+```
+Ignoring 16 permissions.allow entries from .claude/settings.json:
+this workspace has not been trusted.
+```
+
+Un proyecto que nunca se ha abierto de forma interactiva **no es de confianza**, y sus permisos se ignoran. Para una tarea programada sobre un repositorio recién clonado, eso significa que el agente arranca con menos permisos de los que la tarea necesita, y falla por una razón que no tiene nada que ver con la tarea.
+
+El preflight tiene que comprobarlo y decirlo con claridad, con la salida documentada a mano: `projects["<ruta>"].hasTrustDialogAccepted` en `.claude.json`.
+
+### 5. Codex: `-a` no existe en `codex exec`
+
+```
+error: unexpected argument '-a' found
+```
+
+**Corrección a la ficha y al plan**, que daban `-a never` por obligatorio. `--ask-for-approval` es del modo interactivo. `codex exec` no pregunta porque no es interactivo, y sus opciones reales son otras:
+
+| Opción | Uso en el producto |
+|---|---|
+| `-s, --sandbox` | `read-only` en auditoría, `workspace-write` en el worktree |
+| `--ignore-user-config` | Neutraliza la configuración del usuario. **Obligatoria en el perfil de seguridad** |
+| `--add-dir` | Directorios adicionales escribibles |
+| `--ephemeral` | No persiste la sesión en disco. Encaja con privacidad |
+| `--skip-git-repo-check` | Solo para proyectos sin Git, en modo lectura |
+| `--dangerously-bypass-approvals-and-sandbox` | **Prohibida** |
+
+Invocación correcta para una tarea programada de solo lectura:
+
+```
+codex exec --json --cd <dir> -s read-only --ignore-user-config "<prompt>"
+```
+
+---
+
+## Correcciones adicionales que estos resultados obligan a hacer
+
+6. **Clasificación de errores**: leer `error_status` y `error` del evento `api_retry`, no analizar texto. Cortar al primer 401.
+7. **Perfiles de seguridad**: `--permission-mode` explícito siempre, más `--settings` en Claude y `--ignore-user-config` en Codex.
+8. **Preflight**: comprobar que el espacio de trabajo es de confianza antes de programar una tarea con escritura.
+9. **Adaptador de Codex**: quitar `-a never`, que no existe en `exec`.
+10. **Resolución del transcrito**: buscar `~/.claude/projects/*/<id>.jsonl` sin distinguir mayúsculas, en vez de recalcular la codificación.
