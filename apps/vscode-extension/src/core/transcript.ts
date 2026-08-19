@@ -132,9 +132,16 @@ export function buildTranscript(run: Run, events: RunEvent[]): Transcript {
     session: run.sesion_proveedor || undefined,
     decision: run.decision || undefined,
     // Per-run: un worktree registrado significa que ESA ejecución fue aislada,
-    // aunque la tarea se edite luego. workspace_mode solo desempata las que no
-    // llegaron a crear worktree (p. ej. directas o falladas muy pronto).
-    isolated: run.worktree ? true : run.workspace_mode === 'direct' ? false : undefined,
+    // aunque la tarea se edite luego (el worktree manda). Sin worktree, el modo
+    // desempata en ambos sentidos: 'direct' → en el repo; 'isolated' → aislada
+    // que falló antes de crear el worktree; desconocido → sin etiqueta.
+    isolated: run.worktree
+      ? true
+      : run.workspace_mode === 'direct'
+        ? false
+        : run.workspace_mode === 'isolated'
+          ? true
+          : undefined,
   };
   return { summary, items };
 }

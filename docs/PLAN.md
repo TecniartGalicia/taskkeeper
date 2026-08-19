@@ -767,3 +767,7 @@ Fecha: 2026-08-19. Hoy el runner SIEMPRE crea worktree (runner.go:203) y el resu
 - `direct` quita la red de revisión: es una elección explícita del usuario, marcada y confirmada. Por defecto todo sigue aislado.
 - No se toca el flujo aislado: es una rama nueva en el runner, no un cambio del camino existente (menos riesgo de regresión).
 - `completed` evita reutilizar `accepted` (que implica «fundido desde un worktree», aquí no aplica).
+
+### Estado tras §25 + §26 (v0.3.0)
+
+Ejecutadas y auditadas. §25: transcript.ts puro (6 tests con eventos reales) + runView.ts (Webview, resumen + transcripción + acciones + refresco en vivo); showRun abre el Webview, el crudo queda en showRunRaw. §26: estado `completed` + workspace_mode (direct/isolated) por columna migrada; runner con rama directa sin worktree; ctl --workspace validado; panel con interruptor «Dónde trabaja» + confirmación de «cambios directos». Auditoría adversarial en 3 pasadas (5+3+1 accionables), todo corregido y verificado, incluida la regla de no-emojis (SVG inline). Go 3 plataformas, extensión 25 unitarias + 4 integración, E2E real de directo (sin worktree, completed). Publicado 0.3.0.

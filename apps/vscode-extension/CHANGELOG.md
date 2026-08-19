@@ -2,6 +2,14 @@
 
 
 
+
+## 0.3.0 — 2026-08-19
+
+Resultados legibles y ejecución «en la conversación».
+
+- **Resultado como transcripción, no como volcado JSON:** al abrir una ejecución ves una conversación legible —lo que dijo el agente, los comandos que ejecutó (con su salida plegable) y la respuesta final— con una cabecera de resumen (estado, coste, vueltas, ficheros) y botones de aceptar/rechazar/archivar. Se actualiza en vivo mientras corre. El registro crudo sigue disponible en «TaskKeeper: Ver ejecución (registro crudo)».
+- **Ejecutar en la conversación (opcional):** una tarea puede correr **en el repositorio real** en vez de en un worktree aislado, añadiendo sus turnos a la conversación que elijas —como si lo hubieras escrito tú. Ideal para comprobaciones recurrentes de solo lectura. En cambios, se convierte en «cambios directos» con confirmación explícita (por defecto todo sigue aislado y revisable).
+
 ## 0.2.0 — 2026-08-19
 
 Panel visual para configurar una tarea, en lugar de los siete diálogos.
