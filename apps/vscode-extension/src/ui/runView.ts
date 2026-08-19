@@ -69,22 +69,23 @@ export function refreshOpenRunView(ctl: Ctl): void {
  * Opens a conversation in Claude Code's native panel by its session id.
  *
  * Claude Code's own URI handler (`vscode://anthropic.claude-code/open?session=`)
- * delegates to the `claude-vscode.primaryEditor.open` command with (session,
- * prompt); we call that command directly when present, and fall back to the URI
- * and then to a terminal, so a version change or a missing command degrades
- * gracefully instead of doing nothing.
+ * delegates to the `claude-vscode.primaryEditor.open` command; we call that
+ * command directly when it is registered (verified against the installed
+ * extension). If it is not — Claude Code missing, or a version that renamed it —
+ * we offer to continue the conversation in a terminal, which is a reliable
+ * fallback. The `vscode://` URI is deliberately NOT used as a fallback: for that
+ * scheme openExternal resolves true even when nothing handles it, so it cannot
+ * tell success from silent failure.
  */
 async function openInClaudeConversation(session: string): Promise<void> {
-  if (!session) return;
+  // El id va a un comando y (en la reserva) a una terminal: se valida su forma
+  // para que un valor inesperado con metacaracteres no se cuele en el shell.
+  if (!/^[A-Za-z0-9._-]{6,}$/.test(session)) return;
   const cmds = await vscode.commands.getCommands(true);
   if (cmds.includes('claude-vscode.primaryEditor.open')) {
     await vscode.commands.executeCommand('claude-vscode.primaryEditor.open', session);
     return;
   }
-  const opened = await vscode.env.openExternal(
-    vscode.Uri.parse(`vscode://anthropic.claude-code/open?session=${encodeURIComponent(session)}`),
-  );
-  if (opened) return;
   const answer = await vscode.window.showWarningMessage(
     t('Could not open the conversation in Claude Code. Open it in a terminal instead?'),
     t('Open in terminal'),
