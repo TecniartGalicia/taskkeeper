@@ -50,6 +50,9 @@ export async function openRunView(ctl: Ctl, runId: string): Promise<void> {
         case 'diff':
           await vscode.commands.executeCommand('taskkeeper.openDiff', runId);
           break;
+        case 'openConversation':
+          await openInClaudeConversation(String((msg as { session?: unknown }).session ?? ''));
+          break;
       }
     } catch (e) {
       panel.webview.postMessage({ type: 'error', message: (e as Error).message });
@@ -60,6 +63,37 @@ export async function openRunView(ctl: Ctl, runId: string): Promise<void> {
 /** Called by the marker watcher so an open result view updates live. */
 export function refreshOpenRunView(ctl: Ctl): void {
   if (current) void push(ctl, current.panel, current.runId);
+}
+
+/**
+ * Opens a conversation in Claude Code's native panel by its session id.
+ *
+ * Claude Code's own URI handler (`vscode://anthropic.claude-code/open?session=`)
+ * delegates to the `claude-vscode.primaryEditor.open` command with (session,
+ * prompt); we call that command directly when present, and fall back to the URI
+ * and then to a terminal, so a version change or a missing command degrades
+ * gracefully instead of doing nothing.
+ */
+async function openInClaudeConversation(session: string): Promise<void> {
+  if (!session) return;
+  const cmds = await vscode.commands.getCommands(true);
+  if (cmds.includes('claude-vscode.primaryEditor.open')) {
+    await vscode.commands.executeCommand('claude-vscode.primaryEditor.open', session);
+    return;
+  }
+  const opened = await vscode.env.openExternal(
+    vscode.Uri.parse(`vscode://anthropic.claude-code/open?session=${encodeURIComponent(session)}`),
+  );
+  if (opened) return;
+  const answer = await vscode.window.showWarningMessage(
+    t('Could not open the conversation in Claude Code. Open it in a terminal instead?'),
+    t('Open in terminal'),
+  );
+  if (answer === t('Open in terminal')) {
+    const term = vscode.window.createTerminal('Claude Code');
+    term.show();
+    term.sendText(`claude --resume ${session}`);
+  }
 }
 
 async function after(ctl: Ctl, panel: vscode.WebviewPanel, runId: string): Promise<void> {
@@ -95,6 +129,7 @@ function strings(): Record<string, string> {
     archive: t('Archive'),
     diff: t('Open diff'),
     refresh: t('Refresh'),
+    open_conv: t('Open in the conversation'),
     files: t('files changed'),
     turns: t('turns'),
     session: t('conversation'),
@@ -212,6 +247,13 @@ function render(m){
   head.append(meta);
 
   const actions=el('div',{className:'actions'});
+  // Cuando la tarea corrió «en la conversación» (directa) y hay sesión, lo
+  // principal es saltar a esa conversación en el chat de Claude Code.
+  if(sm.isolated===false && sm.session){
+    const oc=el('button',{className:'btn primary'},STR.open_conv);
+    oc.addEventListener('click',()=>vscode.postMessage({type:'openConversation',session:sm.session}));
+    actions.append(oc);
+  }
   if(sm.state==='awaiting_review'){
     if(sm.files>0){ const d=el('button',{className:'btn ghost'},STR.diff); d.addEventListener('click',()=>vscode.postMessage({type:'diff'})); actions.append(d); }
     const a=el('button',{className:'btn primary'},STR.accept); a.addEventListener('click',()=>vscode.postMessage({type:'accept'}));

@@ -227,5 +227,8 @@
   "Direct changes": "Cambios directos",
   "Writes directly in your working copy, without a review step.": "Escribe directamente en tu copia de trabajo, sin paso de revisión.",
   "\"{0}\" ran in the conversation.": "«{0}» se ejecutó en la conversación.",
-  "Show result": "Ver resultado"
+  "Show result": "Ver resultado",
+  "Could not open the conversation in Claude Code. Open it in a terminal instead?": "No se pudo abrir la conversación en Claude Code. ¿La abro en una terminal?",
+  "Open in terminal": "Abrir en terminal",
+  "Open in the conversation": "Abrir en la conversación"
 }
