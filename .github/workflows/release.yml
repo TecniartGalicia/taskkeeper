@@ -74,10 +74,10 @@ jobs:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: |
           VER="${GITHUB_REF_NAME#v}"
-          if npx ovsx get argalla.taskkeeper --version "$VER" >/dev/null 2>&1; then
+          if npx ovsx get argalla.taskkeeper -v "$VER" --metadata >/dev/null 2>&1; then
             echo "Open VSX already has $VER — skipping"
           else
-            npx ovsx publish "taskkeeper-${GITHUB_REF_NAME}-win32-x64.vsix" --target win32-x64 -p "$OVSX_PAT"
+            npx ovsx publish "taskkeeper-${GITHUB_REF_NAME}-win32-x64.vsix"   # reads OVSX_PAT from the env; never on argv
           fi
       - name: GitHub release with the VSIX attached
         env:
