@@ -418,7 +418,9 @@ function render(){
   // Repository
   const repoRow=el('div',{className:'row'});
   const repoChip=el('span',{className:'chip'}, state.proyectoNombre||'—');
-  if(state.proyectoNombre && !state.isGit) repoChip.append(el('span',{className:'req'},' · '+S.not_git));
+  // El aviso de «no es un repo Git» solo importa en modo aislado: en modo
+  // directo («en la conversación») cualquier carpeta vale.
+  if(state.proyectoNombre && !state.isGit && state.workspace!=='direct') repoChip.append(el('span',{className:'req'},' · '+S.not_git));
   if(state.editing){
     // El repositorio de una tarea es fijo: editar no lo reasigna. Se muestra
     // bloqueado en vez de ofrecer un cambio que se ignoraría en silencio.

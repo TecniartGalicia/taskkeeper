@@ -46,6 +46,22 @@ func git(ctx context.Context, dir string, args ...string) (string, error) {
 // Se resuelve el COMMIT, no la rama: si alguien empuja algo a la rama entre el
 // preflight y el arranque del agente, la base no debe moverse bajo los pies de
 // la ejecución.
+// ComprobarSuave valida una carpeta para el modo «en la conversación» (directo):
+// solo exige que EXISTA. No hace falta que sea un repositorio Git, porque en ese
+// modo no se crea worktree ni rama. Si además resulta ser un repo Git, se
+// captura su raíz (por si la misma carpeta se comparte algún día con una tarea
+// aislada), pero no se exige ninguna rama ni un árbol limpio.
+func ComprobarSuave(ctx context.Context, workspace string) (*Preflight, error) {
+	if fi, err := os.Stat(workspace); err != nil || !fi.IsDir() {
+		return nil, fmt.Errorf("la ruta %q no existe o no es un directorio", workspace)
+	}
+	root, err := git(ctx, workspace, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return &Preflight{}, nil // carpeta válida que no es git: perfecto para directo
+	}
+	return &Preflight{GitRoot: root}, nil
+}
+
 func Comprobar(ctx context.Context, workspace, ramaBase string) (*Preflight, error) {
 	if fi, err := os.Stat(workspace); err != nil || !fi.IsDir() {
 		return nil, fmt.Errorf("la ruta %q no existe o no es un directorio", workspace)

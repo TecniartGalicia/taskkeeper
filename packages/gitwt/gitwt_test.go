@@ -186,3 +186,35 @@ func TestCrearRechazaEscapes(t *testing.T) {
 		t.Errorf("Crear aceptó una rama que escapa del directorio gestionado")
 	}
 }
+
+// §26: el preflight suave acepta una carpeta que NO es git (para el modo
+// «en la conversación»), y si es git captura su raíz.
+func TestComprobarSuave(t *testing.T) {
+	ctx := context.Background()
+	// Carpeta normal, sin git: válida, sin GitRoot.
+	plain := t.TempDir()
+	pf, err := ComprobarSuave(ctx, plain)
+	if err != nil {
+		t.Fatalf("una carpeta que existe no debería fallar: %v", err)
+	}
+	if pf.GitRoot != "" {
+		t.Errorf("una carpeta sin git no debería tener GitRoot: %q", pf.GitRoot)
+	}
+	// Carpeta inexistente: sí falla.
+	if _, err := ComprobarSuave(ctx, filepath.Join(plain, "no-existe")); err == nil {
+		t.Errorf("una carpeta inexistente debería fallar")
+	}
+	// Carpeta git: captura la raíz.
+	repo := t.TempDir()
+	for _, a := range [][]string{{"init", "-q"}, {"config", "user.email", "p@l"}, {"config", "user.name", "p"}} {
+		c := exec.Command("git", a...)
+		c.Dir = repo
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", a, err, out)
+		}
+	}
+	pf2, err := ComprobarSuave(ctx, repo)
+	if err != nil || pf2.GitRoot == "" {
+		t.Errorf("una carpeta git debería dar GitRoot: pf=%+v err=%v", pf2, err)
+	}
+}

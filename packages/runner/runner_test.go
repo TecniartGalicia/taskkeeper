@@ -436,3 +436,44 @@ func TestDirectoSinWorktreeAcabaCompleted(t *testing.T) {
 		t.Fatalf("estado = %s, se esperaba completed", estado)
 	}
 }
+
+// §26: una tarea directa en una carpeta que NO es repositorio Git debe ejecutar
+// y acabar en completed (continuar una conversación no exige un repo git).
+func TestDirectoSinGitFunciona(t *testing.T) {
+	raiz := t.TempDir()
+	plain := filepath.Join(raiz, "carpeta-sin-git")
+	os.MkdirAll(plain, 0o755)
+	os.WriteFile(filepath.Join(plain, "notas.txt"), []byte("hola\n"), 0o644)
+	db, err := store.Open(filepath.Join(raiz, "tk.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	pid, _ := db.UpsertProject(store.Project{Name: "plano", WorkspacePath: plain})
+	task, _, err := db.CreateTask(store.Task{
+		Name: "directo-plano", ProjectID: pid, Agent: "falso", Enabled: true,
+		ConversationMode: "new", WorkspaceMode: "direct",
+		ScheduleRule: `{"type":"daily","time":"03:00"}`, Timezone: "Europe/Madrid",
+		MisfirePolicy: "skip", PermissionProfile: "auditoria", TimeoutSeconds: 25,
+	}, "comprueba")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := PorDefecto()
+	o.DirTurnos = filepath.Join(raiz, "turnos")
+	o.DirWorktrees = filepath.Join(raiz, "worktrees")
+	o.EsperaTurno = 2 * time.Second
+	o.SondeoCancel = 300 * time.Millisecond
+	d := Deps{
+		Adaptador: func(string) (adapters.Adaptador, error) { return &agenteFalso{guion: "trabaja"}, nil },
+		Grupo:     platform.NuevoGrupo,
+	}
+	if err := Ejecutar(context.Background(), db, d, o, task.ID, time.Now().UTC()); err != nil {
+		t.Fatalf("Ejecutar: %v", err)
+	}
+	var estado string
+	db.QueryRow(`SELECT status FROM runs WHERE task_id=? ORDER BY rowid DESC LIMIT 1`, task.ID).Scan(&estado)
+	if estado != string(store.StateCompleted) {
+		t.Fatalf("estado = %s, se esperaba completed (carpeta sin git en modo directo debe funcionar)", estado)
+	}
+}

@@ -184,24 +184,29 @@ func Ejecutar(ctx context.Context, db *store.DB, d Deps, o Opciones,
 		db.Transition(run.ID, store.StateFailedAuth, err.Error())
 		return nil
 	}
-	pf, err := gitwt.Comprobar(ctx, proj.WorkspacePath, proj.DefaultBranch)
-	if err != nil {
-		db.Transition(run.ID, store.StateFailed, err.Error())
-		return nil
-	}
-	if pf.Sucio {
-		db.AppendEvent(run.ID, "aviso",
-			`{"aviso":"el checkout principal tiene cambios sin guardar; no se copian al worktree"}`)
-	}
-
-	// 4. Worktree desde el commit resuelto, no desde la rama.
+	// 4. Preparación del sitio de trabajo, según el modo.
 	//
-	// Modo «en la conversación» (directo): no se crea worktree, el agente trabaja
-	// en el repo real y no hay paso de revisión. Todo lo demás (repo aislado) es
-	// el camino de siempre, intacto.
+	// Modo «en la conversación» (directo): no se crea worktree ni se exige un
+	// repositorio Git; el agente trabaja en el repo real y no hay revisión. Solo
+	// se comprueba que la carpeta exista. El modo aislado es el camino de siempre:
+	// exige repo y rama, y crea el worktree desde el commit base.
 	directo := task.WorkspaceMode == "direct"
 	var wt *gitwt.Worktree
-	if !directo {
+	if directo {
+		if _, err := gitwt.ComprobarSuave(ctx, proj.WorkspacePath); err != nil {
+			db.Transition(run.ID, store.StateFailed, err.Error())
+			return nil
+		}
+	} else {
+		pf, err := gitwt.Comprobar(ctx, proj.WorkspacePath, proj.DefaultBranch)
+		if err != nil {
+			db.Transition(run.ID, store.StateFailed, err.Error())
+			return nil
+		}
+		if pf.Sucio {
+			db.AppendEvent(run.ID, "aviso",
+				`{"aviso":"el checkout principal tiene cambios sin guardar; no se copian al worktree"}`)
+		}
 		rama, err := gitwt.NombreRama(task.Name, ocurrencia, run.ID[:6])
 		if err != nil {
 			db.Transition(run.ID, store.StateFailed, err.Error())

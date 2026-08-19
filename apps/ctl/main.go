@@ -256,7 +256,16 @@ func crear(out salida, db *store.DB, cfg config.Config, args []string) {
 	}
 
 	ctx := context.Background()
-	pf, err := gitwt.Comprobar(ctx, o.proyecto, o.rama)
+	// En modo directo («en la conversación») basta con que la carpeta exista: no
+	// se crea worktree, así que no se exige repositorio Git ni rama base. En modo
+	// aislado sí se comprueba el repo y el commit de la rama.
+	var pf *gitwt.Preflight
+	var err error
+	if o.workspace == "direct" {
+		pf, err = gitwt.ComprobarSuave(ctx, o.proyecto)
+	} else {
+		pf, err = gitwt.Comprobar(ctx, o.proyecto, o.rama)
+	}
 	if err != nil {
 		out.fallo(fmt.Errorf("el proyecto no vale: %w", err))
 	}
