@@ -72,7 +72,7 @@ describe('buildTranscript', () => {
       ev('sesion_iniciada', { type: 'system', subtype: 'init', cwd: 'C:\\repo\\real', session_id: 's' }, 1),
       ev('resultado', { type: 'result', is_error: false, result: 'listo' }, 2),
     ];
-    const { summary, items } = buildTranscript(run({ estado: 'completed', worktree: '' }), evs);
+    const { summary, items } = buildTranscript(run({ estado: 'completed', worktree: '', workspace_mode: 'direct' }), evs);
     assert.strictEqual(summary.isolated, false);
     assert.match(items[0].text!, /directly in the repository/);
   });

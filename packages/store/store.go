@@ -542,7 +542,7 @@ func (db *DB) Inbox() ([]InboxItem, error) {
 		JOIN tasks t    ON t.id = r.task_id
 		JOIN projects p ON p.id = t.project_id
 		WHERE r.review_decision IS NULL
-		  AND r.status IN ('awaiting_review','failed','failed_quota','failed_auth',
+		  AND r.status IN ('awaiting_review','completed','failed','failed_quota','failed_auth',
 		                   'failed_verification','running')
 		ORDER BY (r.status='running') DESC, r.finished_at DESC`)
 	if err != nil {

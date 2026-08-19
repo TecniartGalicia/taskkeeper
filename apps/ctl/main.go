@@ -340,6 +340,9 @@ func editar(out salida, db *store.DB, cfg config.Config, args []string) {
 		out.fallo(err)
 	}
 	o, _ := parsearOpciones("editar", args[1:], base, rev.Prompt)
+	if o.workspace != "isolated" && o.workspace != "direct" {
+		out.fallo(fmt.Errorf("--workspace debe ser isolated o direct"))
+	}
 
 	regla, occ, avisos, err := construirRegla(o)
 	if err != nil {
@@ -700,6 +703,7 @@ type ejecucionJSON struct {
 	SesionProveedor string   `json:"sesion_proveedor"`
 	Ficheros        []string `json:"ficheros"`
 	Decision        string   `json:"decision"`
+	WorkspaceMode   string   `json:"workspace_mode"`
 	Cancelando      bool     `json:"cancelando"`
 	Agente          string   `json:"agente"`
 }
@@ -712,7 +716,7 @@ func aEjecucionJSON(r *store.RunDetalle) ejecucionJSON {
 		Inicio: r.StartedAt, Fin: r.FinishedAt,
 		Worktree: r.WorktreePath, Rama: r.WorktreeBranch, CommitBase: r.BaseCommit,
 		Resumen: r.Summary, CodigoError: r.ErrorCode, SesionProveedor: r.ProviderSession,
-		Decision: r.ReviewDecision, Cancelando: r.CancelRequested, Agente: r.Agent,
+		Decision: r.ReviewDecision, WorkspaceMode: r.WorkspaceMode, Cancelando: r.CancelRequested, Agente: r.Agent,
 		Ficheros: []string{},
 	}
 	if r.CostUSD.Valid {

@@ -225,5 +225,7 @@
   "In the conversation": "En la conversación",
   "Runs in the real repository and adds its turns to the conversation. No review step.": "Corre en el repositorio real y añade sus turnos a la conversación. Sin paso de revisión.",
   "Direct changes": "Cambios directos",
-  "Writes directly in your working copy, without a review step.": "Escribe directamente en tu copia de trabajo, sin paso de revisión."
+  "Writes directly in your working copy, without a review step.": "Escribe directamente en tu copia de trabajo, sin paso de revisión.",
+  "\"{0}\" ran in the conversation.": "«{0}» se ejecutó en la conversación.",
+  "Show result": "Ver resultado"
 }

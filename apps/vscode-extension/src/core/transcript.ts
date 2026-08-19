@@ -131,7 +131,7 @@ export function buildTranscript(run: Run, events: RunEvent[]): Transcript {
     errorCode: run.codigo_error || undefined,
     session: run.sesion_proveedor || undefined,
     decision: run.decision || undefined,
-    isolated: run.worktree ? true : run.estado === 'completed' ? false : undefined,
+    isolated: run.workspace_mode ? run.workspace_mode !== 'direct' : run.worktree ? true : undefined,
   };
   return { summary, items };
 }

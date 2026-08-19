@@ -65,6 +65,7 @@ export interface Run {
   sesion_proveedor: string;
   ficheros: string[];
   decision: string;
+  workspace_mode?: string;
   cancelando: boolean;
   agente: string;
 }

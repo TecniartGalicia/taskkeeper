@@ -87,6 +87,8 @@ export function stateLabel(s: string): string {
       return t('accepted');
     case 'rejected':
       return t('rejected');
+    case 'completed':
+      return t('Done');
     case 'skipped':
       return t('skipped');
     case 'failed':

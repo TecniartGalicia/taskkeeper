@@ -120,11 +120,12 @@ type RunDetalle struct {
 	WorktreePath, WorktreeBranch, BaseCommit                                        string
 	CostUSD                                                                         sql.NullFloat64
 	Summary, ErrorCode, ProviderSession, ReviewDecision                             string
+	WorkspaceMode                                                                   string
 	CancelRequested                                                                 bool
 }
 
 const selectDetalle = `
-	SELECT r.id, r.task_id, t.name, p.name, p.workspace_path, p.git_root, p.default_branch, t.agent,
+	SELECT r.id, r.task_id, t.name, p.name, p.workspace_path, p.git_root, p.default_branch, t.agent, t.workspace_mode,
 	       r.status, r.scheduled_for_utc, COALESCE(r.started_at,''), COALESCE(r.finished_at,''),
 	       COALESCE(r.worktree_path,''), COALESCE(r.worktree_branch,''), COALESCE(r.base_commit,''),
 	       r.cost_usd, COALESCE(r.summary,''), COALESCE(r.error_code,''),
@@ -137,7 +138,7 @@ func scanDetalle(rows interface{ Scan(...any) error }) (*RunDetalle, error) {
 	r := &RunDetalle{}
 	var cancel int
 	err := rows.Scan(&r.ID, &r.TaskID, &r.TaskName, &r.ProjectName, &r.WorkspacePath, &r.GitRoot,
-		&r.DefaultBranch, &r.Agent, &r.Status, &r.ScheduledForUTC, &r.StartedAt, &r.FinishedAt,
+		&r.DefaultBranch, &r.Agent, &r.WorkspaceMode, &r.Status, &r.ScheduledForUTC, &r.StartedAt, &r.FinishedAt,
 		&r.WorktreePath, &r.WorktreeBranch, &r.BaseCommit, &r.CostUSD, &r.Summary, &r.ErrorCode,
 		&r.ProviderSession, &r.ReviewDecision, &cancel)
 	if err != nil {
@@ -154,7 +155,7 @@ func (db *DB) GetRunDetalle(id string) (*RunDetalle, error) {
 func (db *DB) InboxDetalle() ([]RunDetalle, error) {
 	rows, err := db.Query(selectDetalle + `
 		WHERE r.review_decision IS NULL
-		  AND r.status IN ('awaiting_review','failed','failed_quota','failed_auth',
+		  AND r.status IN ('awaiting_review','completed','failed','failed_quota','failed_auth',
 		                   'failed_verification','running','preflight','queued','verifying')
 		ORDER BY (r.status IN ('running','preflight','queued','verifying')) DESC,
 		         COALESCE(r.finished_at, r.started_at, r.scheduled_for_utc) DESC`)

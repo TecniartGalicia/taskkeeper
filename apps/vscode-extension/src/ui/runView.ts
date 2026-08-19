@@ -175,7 +175,15 @@ const el=(t,p={},...k)=>{const e=document.createElement(t);Object.assign(e,p);fo
 vscode.postMessage({type:'ready'});
 window.addEventListener('message',(e)=>{ const m=e.data; if(m.type==='render') render(m); else if(m.type==='error') showError(m.message); });
 
-const ICON={say:'🗨',tool:'⚡',thought:'…',system:'·',notice:'!',log:'·',final:'✓'};
+// Inline SVG icons (no emoji, per the project's icon convention).
+const SVG={
+  say:'<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 3.5h11v6H6.5l-3 2.5V9.5H2.5z"/></svg>',
+  tool:'<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4l3 4-3 4M8.5 12H13"/></svg>',
+  thought:'<svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor"><circle cx="4" cy="8" r="1.1"/><circle cx="8" cy="8" r="1.1"/><circle cx="12" cy="8" r="1.1"/></svg>',
+  final:'<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 8.5l3.2 3L13 4.5"/></svg>',
+  dot:'<svg viewBox="0 0 16 16" width="9" height="9" fill="currentColor"><circle cx="8" cy="8" r="3"/></svg>',
+};
+const ICON={say:SVG.say,tool:SVG.tool,thought:SVG.thought,final:SVG.final,system:SVG.dot,notice:SVG.dot,log:SVG.dot};
 
 function stateInfo(st){
   const key='state_'+st;
@@ -219,7 +227,7 @@ function render(m){
   if(!tr.items.length){ app.append(el('div',{className:'empty'},STR.empty)); return; }
   for(const it of tr.items){
     const row=el('div',{className:'ev '+it.kind+(it.error?' err':'')});
-    row.append(el('div',{className:'ic'},ICON[it.kind]||'·'));
+    row.append(el('div',{className:'ic',innerHTML:ICON[it.kind]||SVG.dot}));
     const body=el('div',{});
     if(it.kind==='say'||it.kind==='final'||it.kind==='thought'){
       const who = it.kind==='final'?STR.result : it.kind==='thought'?STR.thought : (it.who||'');
@@ -237,5 +245,5 @@ function render(m){
   }
 }
 
-function showError(msg){ const app=document.getElementById('app'); app.append(el('div',{className:'empty'},'⚠ '+msg)); }
+function showError(msg){ const app=document.getElementById('app'); app.append(el('div',{className:'empty'},msg)); }
 `;

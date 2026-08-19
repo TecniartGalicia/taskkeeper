@@ -381,6 +381,10 @@ function onMarker(inbox: InboxProvider, refreshAll: () => void): void {
         void vscode.window.showWarningMessage(t('"{0}" hit the {1} usage limit and will retry later.', r.tarea, r.agente));
       } else if (r.estado === 'failed' || r.estado === 'failed_verification') {
         void vscode.window.showWarningMessage(t('"{0}" failed ({1}). See the run details.', r.tarea, r.codigo_error || stateLabel(r.estado)));
+      } else if (r.estado === 'completed') {
+        void vscode.window
+          .showInformationMessage(t('"{0}" ran in the conversation.', r.tarea), t('Show result'))
+          .then((a) => (a === t('Show result') ? vscode.commands.executeCommand('taskkeeper.showRun', r.id) : undefined));
       }
     }
   }, 900);
