@@ -25,7 +25,19 @@ import (
 //go:embed schema.sql
 var schemaSQL string
 
-type DB struct{ *sql.DB }
+type DB struct {
+	*sql.DB
+	// OnChange se invoca tras cada escritura que cambia lo que ve la interfaz.
+	// El worker lo usa para tocar el fichero de marca que observa la extensión:
+	// así los cambios se ven en menos de un segundo sin sondear la base.
+	OnChange func()
+}
+
+func (db *DB) notify() {
+	if db.OnChange != nil {
+		db.OnChange()
+	}
+}
 
 // Open abre la base y aplica el esquema. Es idempotente.
 func Open(path string) (*DB, error) {
@@ -46,7 +58,7 @@ func Open(path string) (*DB, error) {
 		sqlDB.Close()
 		return nil, fmt.Errorf("aplicando el esquema: %w", err)
 	}
-	db := &DB{sqlDB}
+	db := &DB{DB: sqlDB}
 	if err := db.migrar(); err != nil {
 		sqlDB.Close()
 		return nil, err
@@ -231,6 +243,7 @@ func (db *DB) CreateTask(t Task, prompt string) (*Task, *Revision, error) {
 	if err := tx.Commit(); err != nil {
 		return nil, nil, err
 	}
+	db.notify()
 	return &t, rev, nil
 }
 
@@ -263,24 +276,37 @@ func (db *DB) LatestRevision(taskID string) (*Revision, error) {
 }
 
 func (db *DB) ListTasks() ([]*Task, error) {
+	// Con una sola conexión abierta, consultar dentro del recorrido de filas
+	// bloquea para siempre: primero se recogen los identificadores y se cierra
+	// el cursor, después se cargan las tareas.
 	rows, err := db.Query(`SELECT id FROM tasks ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []*Task
+	var ids []string
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
+			rows.Close()
 			return nil, err
 		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	out := make([]*Task, 0, len(ids))
+	for _, id := range ids {
 		t, err := db.GetTask(id)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, t)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (db *DB) SetOSTriggerID(taskID, triggerID string) error {
@@ -291,6 +317,9 @@ func (db *DB) SetOSTriggerID(taskID, triggerID string) error {
 
 func (db *DB) DeleteTask(id string) error {
 	_, err := db.Exec(`DELETE FROM tasks WHERE id=?`, id)
+	if err == nil {
+		db.notify()
+	}
 	return err
 }
 
@@ -348,6 +377,7 @@ func (db *DB) CreateRunIfAbsent(taskID, revisionID string, scheduledFor time.Tim
 		return nil, false, err
 	}
 	db.Audit(run.ID, taskID, "system", "run_created", `{}`)
+	db.notify()
 	return run, true, nil
 }
 
@@ -394,6 +424,7 @@ func (db *DB) Transition(runID string, to State, detail string) error {
 		return err
 	}
 	db.Audit(runID, "", "system", "state_"+string(to), jsonDetail(detail))
+	db.notify()
 	return nil
 }
 
@@ -407,6 +438,9 @@ func (db *DB) SetRunField(runID, col string, v any) error {
 		return fmt.Errorf("columna no permitida: %s", col)
 	}
 	_, err := db.Exec(`UPDATE runs SET `+col+`=? WHERE id=?`, v, runID)
+	if err == nil {
+		db.notify()
+	}
 	return err
 }
 
@@ -431,6 +465,7 @@ func (db *DB) RequestCancel(runID string) error {
 	if _, err := db.Exec(`UPDATE runs SET cancel_requested=1 WHERE id=?`, runID); err != nil {
 		return err
 	}
+	db.notify()
 	return db.Audit(runID, "", "user", "cancel_requested", `{}`)
 }
 

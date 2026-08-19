@@ -5,6 +5,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"time"
 )
 
 type Config struct {
@@ -49,4 +50,20 @@ func (c Config) Preparar() error {
 		}
 	}
 	return nil
+}
+
+// RutaMarca es el fichero que la extensión observa. Tocarlo es la única señal
+// que viaja del worker a la interfaz: sin canal, sin sondeo de la base.
+func RutaMarca(c Config) string { return filepath.Join(c.Raiz, "cambios.marca") }
+
+func TocarMarca(c Config) {
+	p := RutaMarca(c)
+	now := time.Now()
+	if err := os.Chtimes(p, now, now); err != nil {
+		os.WriteFile(p, []byte(now.UTC().Format(time.RFC3339Nano)), 0o644)
+		return
+	}
+	// Chtimes basta para que fs.watch avise, pero algunos observadores solo
+	// reaccionan al contenido; se escribe además el instante.
+	os.WriteFile(p, []byte(now.UTC().Format(time.RFC3339Nano)), 0o644)
 }

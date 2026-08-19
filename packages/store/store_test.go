@@ -231,3 +231,38 @@ func TestAyudanteEscribe(t *testing.T) {
 		}
 	}
 }
+
+// Con una sola conexión, consultar dentro de un cursor abierto se bloquea para
+// siempre. Este caso lo destapó la prueba de humo de la línea de órdenes, no la
+// suite: la Fase 1 nunca listó una base con más de una tarea.
+func TestListarVariasTareasNoSeBloquea(t *testing.T) {
+	db, _ := nuevaBase(t)
+	pid, _ := db.UpsertProject(Project{Name: "d", WorkspacePath: "C:/d", GitRoot: "C:/d", DefaultBranch: "main"})
+	for i := 0; i < 3; i++ {
+		if _, _, err := db.CreateTask(Task{
+			Name: fmt.Sprintf("t%d", i), ProjectID: pid, Agent: "claude", Enabled: true,
+			ConversationMode: "new", ScheduleRule: `{"type":"daily","time":"03:00"}`,
+			Timezone: "Europe/Madrid", MisfirePolicy: "skip", PermissionProfile: "auditoria",
+			TimeoutSeconds: 60,
+		}, "p"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hecho := make(chan int, 1)
+	go func() {
+		ts, err := db.ListTasks()
+		if err != nil {
+			hecho <- -1
+			return
+		}
+		hecho <- len(ts)
+	}()
+	select {
+	case n := <-hecho:
+		if n != 3 {
+			t.Fatalf("ListTasks devolvió %d, se esperaban 3", n)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("ListTasks se bloqueó con varias tareas")
+	}
+}

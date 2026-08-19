@@ -63,6 +63,8 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
+	// Cada cambio de estado toca la marca que observa la extensión.
+	db.OnChange = func() { config.TocarMarca(cfg) }
 
 	// Ctrl+C o cierre de sesión: se propaga como cancelación ordenada. El grupo
 	// de procesos se cierra igualmente por el defer del runner.

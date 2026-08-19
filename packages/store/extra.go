@@ -1,0 +1,227 @@
+package store
+
+import (
+	"database/sql"
+	"errors"
+)
+
+// Tipos que la línea de órdenes usa para construir tareas sin importar
+// database/sql.
+type NullString = sql.NullString
+
+func NullFloat(v float64) sql.NullFloat64 {
+	if v <= 0 {
+		return sql.NullFloat64{}
+	}
+	return sql.NullFloat64{Float64: v, Valid: true}
+}
+
+// ---------- sesiones de agente ----------
+
+type SessionRef struct {
+	ID, Provider, ExternalID, CWD string
+}
+
+func (db *DB) UpsertSessionRef(provider, externalID, cwd string) (string, error) {
+	var id string
+	err := db.QueryRow(`SELECT id FROM session_refs WHERE provider=? AND external_session_id=?`,
+		provider, externalID).Scan(&id)
+	if err == nil {
+		return id, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
+	id = NewID()
+	_, err = db.Exec(`INSERT INTO session_refs (id,provider,external_session_id,cwd,last_seen_at)
+	                  VALUES (?,?,?,?,?)`, id, provider, externalID, cwd, Now())
+	return id, err
+}
+
+func (db *DB) GetSessionRef(id string) (*SessionRef, error) {
+	s := &SessionRef{}
+	err := db.QueryRow(`SELECT id,provider,external_session_id,cwd FROM session_refs WHERE id=?`, id).
+		Scan(&s.ID, &s.Provider, &s.ExternalID, &s.CWD)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// ---------- tareas ----------
+
+// UpdateTask guarda los campos editables y, si el prompt cambió, crea una
+// revisión nueva. Las ejecuciones anteriores conservan la que usaron.
+func (db *DB) UpdateTask(t Task, prompt string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	now := Now()
+	if _, err := tx.Exec(`UPDATE tasks SET name=?, agent=?, conversation_mode=?, session_ref_id=?,
+		schedule_rule=?, timezone=?, misfire_policy=?, max_lateness_seconds=?, permission_profile=?,
+		timeout_seconds=?, max_budget_usd=?, daily_budget_usd=?, updated_at=? WHERE id=?`,
+		t.Name, t.Agent, t.ConversationMode, t.SessionRefID, t.ScheduleRule, t.Timezone,
+		t.MisfirePolicy, maxOr(t.MaxLatenessSeconds, 7200), t.PermissionProfile, t.TimeoutSeconds,
+		t.MaxBudgetUSD, t.DailyBudgetUSD, now, t.ID); err != nil {
+		return err
+	}
+	var actual string
+	var version int
+	if err := tx.QueryRow(`SELECT prompt_text, version FROM task_revisions WHERE task_id=?
+	                       ORDER BY version DESC LIMIT 1`, t.ID).Scan(&actual, &version); err != nil {
+		return err
+	}
+	if actual != prompt {
+		if _, err := tx.Exec(`INSERT INTO task_revisions (id,task_id,version,prompt_text,prompt_sha256,created_at)
+		                      VALUES (?,?,?,?,?,?)`,
+			NewID(), t.ID, version+1, prompt, Sha256(prompt), now); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(`INSERT INTO audit (task_id,at,actor,action,detail_json) VALUES (?,?,?,?,?)`,
+		t.ID, now, "user", "task_updated", `{}`); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	db.notify()
+	return nil
+}
+
+func (db *DB) SetEnabled(id string, enabled bool) error {
+	_, err := db.Exec(`UPDATE tasks SET enabled=?, updated_at=? WHERE id=?`, boolToInt(enabled), Now(), id)
+	if err == nil {
+		db.notify()
+	}
+	return err
+}
+
+// LastRunState devuelve el estado y la fecha de la última ejecución de la tarea.
+func (db *DB) LastRunState(taskID string) (string, string, error) {
+	var estado string
+	var cuando sql.NullString
+	err := db.QueryRow(`SELECT status, COALESCE(finished_at, started_at, scheduled_for_utc)
+		FROM runs WHERE task_id=? ORDER BY rowid DESC LIMIT 1`, taskID).Scan(&estado, &cuando)
+	if err != nil {
+		return "", "", err
+	}
+	return estado, cuando.String, nil
+}
+
+// ---------- ejecuciones con detalle ----------
+
+type RunDetalle struct {
+	ID, TaskID, TaskName, ProjectName, WorkspacePath, GitRoot, DefaultBranch, Agent string
+	Status                                                                          State
+	ScheduledForUTC, StartedAt, FinishedAt                                          string
+	WorktreePath, WorktreeBranch, BaseCommit                                        string
+	CostUSD                                                                         sql.NullFloat64
+	Summary, ErrorCode, ProviderSession, ReviewDecision                             string
+	CancelRequested                                                                 bool
+}
+
+const selectDetalle = `
+	SELECT r.id, r.task_id, t.name, p.name, p.workspace_path, p.git_root, p.default_branch, t.agent,
+	       r.status, r.scheduled_for_utc, COALESCE(r.started_at,''), COALESCE(r.finished_at,''),
+	       COALESCE(r.worktree_path,''), COALESCE(r.worktree_branch,''), COALESCE(r.base_commit,''),
+	       r.cost_usd, COALESCE(r.summary,''), COALESCE(r.error_code,''),
+	       COALESCE(r.provider_session_id,''), COALESCE(r.review_decision,''), r.cancel_requested
+	FROM runs r
+	JOIN tasks t    ON t.id = r.task_id
+	JOIN projects p ON p.id = t.project_id`
+
+func scanDetalle(rows interface{ Scan(...any) error }) (*RunDetalle, error) {
+	r := &RunDetalle{}
+	var cancel int
+	err := rows.Scan(&r.ID, &r.TaskID, &r.TaskName, &r.ProjectName, &r.WorkspacePath, &r.GitRoot,
+		&r.DefaultBranch, &r.Agent, &r.Status, &r.ScheduledForUTC, &r.StartedAt, &r.FinishedAt,
+		&r.WorktreePath, &r.WorktreeBranch, &r.BaseCommit, &r.CostUSD, &r.Summary, &r.ErrorCode,
+		&r.ProviderSession, &r.ReviewDecision, &cancel)
+	if err != nil {
+		return nil, err
+	}
+	r.CancelRequested = cancel != 0
+	return r, nil
+}
+
+func (db *DB) GetRunDetalle(id string) (*RunDetalle, error) {
+	return scanDetalle(db.QueryRow(selectDetalle+` WHERE r.id=?`, id))
+}
+
+func (db *DB) InboxDetalle() ([]RunDetalle, error) {
+	rows, err := db.Query(selectDetalle + `
+		WHERE r.review_decision IS NULL
+		  AND r.status IN ('awaiting_review','failed','failed_quota','failed_auth',
+		                   'failed_verification','running','preflight','queued','verifying')
+		ORDER BY (r.status IN ('running','preflight','queued','verifying')) DESC,
+		         COALESCE(r.finished_at, r.started_at, r.scheduled_for_utc) DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RunDetalle
+	for rows.Next() {
+		r, err := scanDetalle(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *r)
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) Historial(limite int) ([]RunDetalle, error) {
+	rows, err := db.Query(selectDetalle+`
+		ORDER BY COALESCE(r.finished_at, r.started_at, r.scheduled_for_utc) DESC LIMIT ?`, limite)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RunDetalle
+	for rows.Next() {
+		r, err := scanDetalle(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *r)
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) SetReview(runID, decision string) error {
+	_, err := db.Exec(`UPDATE runs SET review_decision=?, review_at=? WHERE id=?`, decision, Now(), runID)
+	if err == nil {
+		db.notify()
+	}
+	return err
+}
+
+// ---------- eventos ----------
+
+type Evento struct {
+	Sequence  int    `json:"seq"`
+	Type      string `json:"tipo"`
+	Payload   string `json:"payload"`
+	CreatedAt string `json:"en"`
+}
+
+func (db *DB) Eventos(runID string, desde int) ([]Evento, error) {
+	rows, err := db.Query(`SELECT sequence,event_type,payload_json,created_at FROM run_events
+	                       WHERE run_id=? AND sequence>? ORDER BY sequence`, runID, desde)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Evento
+	for rows.Next() {
+		var e Evento
+		if err := rows.Scan(&e.Sequence, &e.Type, &e.Payload, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
