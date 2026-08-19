@@ -771,3 +771,7 @@ Fecha: 2026-08-19. Hoy el runner SIEMPRE crea worktree (runner.go:203) y el resu
 ### Estado tras §25 + §26 (v0.3.0)
 
 Ejecutadas y auditadas. §25: transcript.ts puro (6 tests con eventos reales) + runView.ts (Webview, resumen + transcripción + acciones + refresco en vivo); showRun abre el Webview, el crudo queda en showRunRaw. §26: estado `completed` + workspace_mode (direct/isolated) por columna migrada; runner con rama directa sin worktree; ctl --workspace validado; panel con interruptor «Dónde trabaja» + confirmación de «cambios directos». Auditoría adversarial en 3 pasadas (5+3+1 accionables), todo corregido y verificado, incluida la regla de no-emojis (SVG inline). Go 3 plataformas, extensión 25 unitarias + 4 integración, E2E real de directo (sin worktree, completed). Publicado 0.3.0.
+
+### Ajuste v0.3.1 — modo directo sin Git
+
+«En la conversación» (direct) ya no exige repositorio Git: `gitwt.ComprobarSuave` (solo carpeta existe; helper `raizGit` compartido con `Comprobar`), usado por `ctl crear` y el runner en modo directo; `editar` a aislado sobre carpeta sin git se rechaza al editar; el panel oculta el aviso «no es git» en directo. Auditado (4 hallazgos: docs, dedup, validación editar, swallow intencional). Tests: `TestComprobarSuave`, `TestDirectoSinGitFunciona`.

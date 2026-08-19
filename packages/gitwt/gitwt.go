@@ -41,33 +41,32 @@ func git(ctx context.Context, dir string, args ...string) (string, error) {
 	return strings.TrimSpace(out.String()), nil
 }
 
+// raizGit resuelve la carpeta a su raíz de repositorio. Comparte la validación
+// de existencia entre Comprobar (aislado) y ComprobarSuave (directo).
+// Devuelve (raíz, esGit, err): err solo si la carpeta no existe; esGit=false
+// cuando existe pero no es un repositorio Git (o git no pudo resolverlo).
+func raizGit(ctx context.Context, workspace string) (string, bool, error) {
+	if fi, err := os.Stat(workspace); err != nil || !fi.IsDir() {
+		return "", false, fmt.Errorf("la ruta %q no existe o no es un directorio", workspace)
+	}
+	root, err := git(ctx, workspace, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", false, nil
+	}
+	return root, true, nil
+}
+
 // Comprobar resuelve la raíz del repositorio y el commit exacto de la rama base.
 //
 // Se resuelve el COMMIT, no la rama: si alguien empuja algo a la rama entre el
 // preflight y el arranque del agente, la base no debe moverse bajo los pies de
 // la ejecución.
-// ComprobarSuave valida una carpeta para el modo «en la conversación» (directo):
-// solo exige que EXISTA. No hace falta que sea un repositorio Git, porque en ese
-// modo no se crea worktree ni rama. Si además resulta ser un repo Git, se
-// captura su raíz (por si la misma carpeta se comparte algún día con una tarea
-// aislada), pero no se exige ninguna rama ni un árbol limpio.
-func ComprobarSuave(ctx context.Context, workspace string) (*Preflight, error) {
-	if fi, err := os.Stat(workspace); err != nil || !fi.IsDir() {
-		return nil, fmt.Errorf("la ruta %q no existe o no es un directorio", workspace)
-	}
-	root, err := git(ctx, workspace, "rev-parse", "--show-toplevel")
-	if err != nil {
-		return &Preflight{}, nil // carpeta válida que no es git: perfecto para directo
-	}
-	return &Preflight{GitRoot: root}, nil
-}
-
 func Comprobar(ctx context.Context, workspace, ramaBase string) (*Preflight, error) {
-	if fi, err := os.Stat(workspace); err != nil || !fi.IsDir() {
-		return nil, fmt.Errorf("la ruta %q no existe o no es un directorio", workspace)
-	}
-	root, err := git(ctx, workspace, "rev-parse", "--show-toplevel")
+	root, esGit, err := raizGit(ctx, workspace)
 	if err != nil {
+		return nil, err
+	}
+	if !esGit {
 		return nil, fmt.Errorf("%w: %s", ErrNoEsRepo, workspace)
 	}
 	commit, err := git(ctx, root, "rev-parse", "--verify", ramaBase+"^{commit}")
@@ -79,6 +78,21 @@ func Comprobar(ctx context.Context, workspace, ramaBase string) (*Preflight, err
 		return nil, err
 	}
 	return &Preflight{GitRoot: root, BaseCommit: commit, Sucio: estado != ""}, nil
+}
+
+// ComprobarSuave valida una carpeta para el modo «en la conversación» (directo):
+// solo exige que EXISTA. No hace falta que sea un repositorio Git, porque en ese
+// modo no se crea worktree ni rama. Si además resulta ser un repo Git, se
+// captura su raíz (por si la misma carpeta se comparte algún día con una tarea
+// aislada); si no lo es, GitRoot queda vacío y no es un error. Nota: cualquier
+// fallo de git al resolver la raíz se trata como «no es git», lo cual es
+// correcto para este modo, que no depende de git.
+func ComprobarSuave(ctx context.Context, workspace string) (*Preflight, error) {
+	root, _, err := raizGit(ctx, workspace)
+	if err != nil {
+		return nil, err
+	}
+	return &Preflight{GitRoot: root}, nil
 }
 
 var nombreValido = regexp.MustCompile(`^[a-z0-9]+(?:[-_][a-z0-9]+)*$`)

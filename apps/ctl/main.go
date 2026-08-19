@@ -352,6 +352,16 @@ func editar(out salida, db *store.DB, cfg config.Config, args []string) {
 	if o.workspace != "isolated" && o.workspace != "direct" {
 		out.fallo(fmt.Errorf("--workspace debe ser isolated o direct"))
 	}
+	// Pasar a modo aislado exige un repositorio Git válido: se comprueba AQUÍ para
+	// fallar al editar y no a la hora de ejecutar (una tarea directa pudo crearse
+	// sobre una carpeta que no es git).
+	if o.workspace == "isolated" {
+		if p, err := db.GetProject(base.ProjectID); err == nil {
+			if _, err := gitwt.Comprobar(context.Background(), p.WorkspacePath, o.rama); err != nil {
+				out.fallo(fmt.Errorf("el modo aislado necesita un repositorio Git: %w", err))
+			}
+		}
+	}
 
 	regla, occ, avisos, err := construirRegla(o)
 	if err != nil {

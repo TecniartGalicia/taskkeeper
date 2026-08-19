@@ -3,6 +3,11 @@
 
 
 
+
+## 0.3.1 — 2026-08-19
+
+- **«En la conversación» ya no exige un repositorio Git.** Para continuar una conversación en modo directo basta con elegir la carpeta donde vive (sigue haciendo falta para localizar la conversación y como directorio de trabajo del agente), pero ya no tiene que ser un repo Git ni tener una rama base. El modo aislado sigue exigiendo Git como debe, y cambiar una tarea a aislado sobre una carpeta sin Git se rechaza al editar, no al ejecutar.
+
 ## 0.3.0 — 2026-08-19
 
 Resultados legibles y ejecución «en la conversación».
