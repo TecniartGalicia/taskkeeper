@@ -297,6 +297,11 @@
           "command": "taskkeeper.editTask",
           "when": "view == taskkeeper.tasks && viewItem =~ /^task./",
           "group": "navigation@0"
+        },
+        {
+          "command": "taskkeeper.archive",
+          "when": "view == taskkeeper.inbox && viewItem == run.done",
+          "group": "inline@1"
         }
       ],
       "commandPalette": [

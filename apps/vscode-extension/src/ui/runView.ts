@@ -140,6 +140,7 @@ const CSS = `
 body{font-family:var(--vscode-font-family);font-size:13px;color:var(--vscode-foreground);background:var(--vscode-editor-background);margin:0}
 #app{max-width:820px;margin:0 auto;padding:20px 24px 60px}
 .empty{color:var(--vscode-descriptionForeground);padding:30px 0;text-align:center}
+.errmsg{color:var(--vscode-inputValidation-errorForeground,#f48771);border:1px solid var(--vscode-inputValidation-errorBorder,#be1100);border-radius:6px;padding:12px 14px;margin:10px 0}
 .head{position:sticky;top:0;background:var(--vscode-editor-background);padding-bottom:12px;border-bottom:1px solid var(--vscode-panel-border);margin-bottom:16px;z-index:1}
 .title{font-size:1.15rem;font-weight:600;margin:0 0 8px}
 .meta{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;font-size:12px;color:var(--vscode-descriptionForeground)}
@@ -217,7 +218,7 @@ function render(m){
     const r=el('button',{className:'btn ghost'},STR.reject); r.addEventListener('click',()=>vscode.postMessage({type:'reject'}));
     actions.append(a,r);
     if(sm.files===0){ const ar=el('button',{className:'btn ghost'},STR.archive); ar.addEventListener('click',()=>vscode.postMessage({type:'archive'})); actions.append(ar); }
-  } else if(String(sm.state).startsWith('failed')){
+  } else if(String(sm.state).startsWith('failed') || sm.state==='completed'){
     const ar=el('button',{className:'btn ghost'},STR.archive); ar.addEventListener('click',()=>vscode.postMessage({type:'archive'})); actions.append(ar);
   }
   const rf=el('button',{className:'btn ghost'},STR.refresh); rf.addEventListener('click',()=>vscode.postMessage({type:'refresh'})); actions.append(rf);
@@ -245,5 +246,5 @@ function render(m){
   }
 }
 
-function showError(msg){ const app=document.getElementById('app'); app.append(el('div',{className:'empty'},msg)); }
+function showError(msg){ const app=document.getElementById('app'); app.append(el('div',{className:'errmsg'},msg)); }
 `;

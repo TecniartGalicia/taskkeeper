@@ -131,7 +131,10 @@ export function buildTranscript(run: Run, events: RunEvent[]): Transcript {
     errorCode: run.codigo_error || undefined,
     session: run.sesion_proveedor || undefined,
     decision: run.decision || undefined,
-    isolated: run.workspace_mode ? run.workspace_mode !== 'direct' : run.worktree ? true : undefined,
+    // Per-run: un worktree registrado significa que ESA ejecución fue aislada,
+    // aunque la tarea se edite luego. workspace_mode solo desempata las que no
+    // llegaron a crear worktree (p. ej. directas o falladas muy pronto).
+    isolated: run.worktree ? true : run.workspace_mode === 'direct' ? false : undefined,
   };
   return { summary, items };
 }
