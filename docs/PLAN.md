@@ -694,3 +694,7 @@ Fecha: 2026-08-19. Sustituir los 7 diálogos por un panel Webview, en fases, aud
 
 ### Auditoría final
 - Toda la suite Go + cross-compila; unit+integración de la extensión; E2E real (crear por panel, multi-hora, editar); empaquetar VSIX; publicar 0.2.0 por tag.
+
+### Estado tras ejecutar §24 (v0.2.0)
+
+F1-F4 hechas y auditadas. Revisión adversarial (2 pasadas): 7 hallazgos, todos en la ruta de edición del panel, corregidos y verificados por E2E (editar limpia presupuesto/autocompact y conserva timeout; presupuesto valida coma decimal; repo bloqueado al editar; panel único cierra-y-recrea). Go verde en 3 plataformas, extensión 19+4, cross-compila. Publicado como 0.2.0.
