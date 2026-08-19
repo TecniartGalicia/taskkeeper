@@ -25,7 +25,8 @@ const CarpetaTareas = `Argalla\TaskKeeper`
 type TriggerSpec struct {
 	Tipo     string // once | daily | weekly
 	Inicio   time.Time
-	Weekdays []int // ISO: 1=lunes .. 7=domingo
+	Horas    []time.Time // varios StartBoundary, uno por hora del día (si vacío, se usa Inicio)
+	Weekdays []int       // ISO: 1=lunes .. 7=domingo
 }
 
 // CurrentUserPrincipal devuelve DOMINIO\usuario.
@@ -56,7 +57,7 @@ func Register(taskID, comando, argumentos string, spec TriggerSpec) error {
 	if err != nil {
 		return fmt.Errorf("resolviendo el usuario: %w", err)
 	}
-	trig, err := renderTrigger(spec)
+	trig, err := renderTriggers(spec)
 	if err != nil {
 		return err
 	}
@@ -120,9 +121,31 @@ func ListManaged() ([]string, error) {
 
 // ---------- generación del XML ----------
 
-func renderTrigger(s TriggerSpec) (string, error) {
-	inicio := s.Inicio.Format("2006-01-02T15:04:05")
-	switch s.Tipo {
+// renderTriggers emite un <Trigger> por cada hora del día. Un disparador por
+// hora es como el Programador de Windows expresa "todos los días a las 15:00 y a
+// las 20:00": dos CalendarTrigger diarios con distinto StartBoundary.
+func renderTriggers(s TriggerSpec) (string, error) {
+	inicios := s.Horas
+	if len(inicios) == 0 {
+		inicios = []time.Time{s.Inicio}
+	}
+	var b strings.Builder
+	for i, ini := range inicios {
+		one, err := renderTrigger(s.Tipo, ini, s.Weekdays)
+		if err != nil {
+			return "", err
+		}
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(one)
+	}
+	return b.String(), nil
+}
+
+func renderTrigger(tipo string, inicioT time.Time, weekdays []int) (string, error) {
+	inicio := inicioT.Format("2006-01-02T15:04:05")
+	switch tipo {
 	case "once":
 		return `    <TimeTrigger>
       <Enabled>true</Enabled>
@@ -135,13 +158,13 @@ func renderTrigger(s TriggerSpec) (string, error) {
       <ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay>
     </CalendarTrigger>`, nil
 	case "weekly":
-		if len(s.Weekdays) == 0 {
+		if len(weekdays) == 0 {
 			return "", fmt.Errorf("regla semanal sin días")
 		}
 		var dias bytes.Buffer
 		nombres := map[int]string{1: "Monday", 2: "Tuesday", 3: "Wednesday",
 			4: "Thursday", 5: "Friday", 6: "Saturday", 7: "Sunday"}
-		for _, d := range s.Weekdays {
+		for _, d := range weekdays {
 			n, ok := nombres[d]
 			if !ok {
 				return "", fmt.Errorf("día ISO fuera de rango: %d", d)
@@ -154,7 +177,7 @@ func renderTrigger(s TriggerSpec) (string, error) {
       <ScheduleByWeek><WeeksInterval>1</WeeksInterval><DaysOfWeek>` + dias.String() + `</DaysOfWeek></ScheduleByWeek>
     </CalendarTrigger>`, nil
 	}
-	return "", fmt.Errorf("tipo de disparador desconocido: %q", s.Tipo)
+	return "", fmt.Errorf("tipo de disparador desconocido: %q", tipo)
 }
 
 func renderTaskXML(userID, trigger, comando, argumentos string) string {

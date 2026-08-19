@@ -14,12 +14,13 @@ import (
 type EspecDisparador struct {
 	Tipo     string
 	Inicio   time.Time
+	Horas    []time.Time // varios StartBoundary, uno por hora del día
 	Weekdays []int
 }
 
 func RegistrarTarea(taskID, comando, argumentos string, spec EspecDisparador) error {
 	return win.Register(taskID, comando, argumentos, win.TriggerSpec{
-		Tipo: spec.Tipo, Inicio: spec.Inicio, Weekdays: spec.Weekdays,
+		Tipo: spec.Tipo, Inicio: spec.Inicio, Horas: spec.Horas, Weekdays: spec.Weekdays,
 	})
 }
 func RetirarTarea(taskID string) error { return win.Unregister(taskID) }

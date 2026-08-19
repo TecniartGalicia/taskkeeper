@@ -127,6 +127,11 @@ func (c *Claude) Comando(p Peticion) (*exec.Cmd, error) {
 	if p.MaxPresupuesto > 0 {
 		args = append(args, "--max-budget-usd", strconv.FormatFloat(p.MaxPresupuesto, 'f', 2, 64))
 	}
+	// Ventana de autocompactación: Claude Code ya compacta solo al acercarse al
+	// límite; esto solo fija un umbral predecible cuando el usuario lo pide.
+	if p.Autocompact != "" {
+		args = append(args, "--autocompact", p.Autocompact)
+	}
 	if p.Worktree != "" {
 		args = append(args, "--add-dir", p.Worktree)
 	}

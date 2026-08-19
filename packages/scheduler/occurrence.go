@@ -12,6 +12,7 @@ package scheduler
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -33,8 +34,37 @@ const (
 type Rule struct {
 	Type     RuleType `json:"type"`
 	AtLocal  string   `json:"at_local,omitempty"` // "2026-08-25T11:00", solo once
-	Time     string   `json:"time,omitempty"`     // "11:00", daily y weekly
+	Time     string   `json:"time,omitempty"`     // "11:00", daily y weekly (una sola hora, retrocompat)
+	Times    []string `json:"times,omitempty"`    // varias horas por día: ["15:00","20:00"]
 	Weekdays []int    `json:"weekdays,omitempty"` // ISO-8601: 1=lunes .. 7=domingo
+}
+
+type horaMin struct{ hh, mm int }
+
+// horasEfectivas devuelve las horas de la regla, ordenadas por minuto del día.
+// Times manda; si está vacío se cae a Time (una sola hora, reglas antiguas).
+func horasEfectivas(rule Rule) ([]horaMin, error) {
+	fuentes := rule.Times
+	if len(fuentes) == 0 && rule.Time != "" {
+		fuentes = []string{rule.Time}
+	}
+	if len(fuentes) == 0 {
+		return nil, fmt.Errorf("la regla no tiene ninguna hora")
+	}
+	var hms []horaMin
+	vistas := map[int]bool{}
+	for _, s := range fuentes {
+		hh, mm, err := parseHourMinute(s)
+		if err != nil {
+			return nil, err
+		}
+		if k := hh*60 + mm; !vistas[k] { // sin duplicados
+			vistas[k] = true
+			hms = append(hms, horaMin{hh, mm})
+		}
+	}
+	sort.Slice(hms, func(i, j int) bool { return hms[i].hh*60+hms[i].mm < hms[j].hh*60+hms[j].mm })
+	return hms, nil
 }
 
 // Occurrence es un instante concreto ya resuelto contra la zona horaria.
@@ -71,7 +101,7 @@ func Next(rule Rule, timezone string, after time.Time) (*Occurrence, error) {
 		return nil, nil
 	}
 
-	hh, mm, err := parseHourMinute(rule.Time)
+	horas, err := horasEfectivas(rule)
 	if err != nil {
 		return nil, err
 	}
@@ -85,9 +115,13 @@ func Next(rule Rule, timezone string, after time.Time) (*Occurrence, error) {
 		if rule.Type == RuleWeekly && !containsInt(rule.Weekdays, isoWeekday(day)) {
 			continue
 		}
-		occ := materialize(day.Year(), day.Month(), day.Day(), hh, mm, loc)
-		if occ.ScheduledForUTC.After(after) {
-			return &occ, nil
+		// Horas en orden ascendente: la primera posterior a `after` es la más
+		// próxima, porque el día es el criterio externo y la hora el interno.
+		for _, h := range horas {
+			occ := materialize(day.Year(), day.Month(), day.Day(), h.hh, h.mm, loc)
+			if occ.ScheduledForUTC.After(after) {
+				return &occ, nil
+			}
 		}
 	}
 	return nil, nil
@@ -115,6 +149,20 @@ func materialize(y int, mo time.Month, d, hh, mm int, loc *time.Location) Occurr
 		ResolvedLocal:   resolved,
 		AdjustedForDST:  resolved != requested,
 	}
+}
+
+// TimesList devuelve las horas de la regla en "HH:MM", ordenadas y sin
+// duplicados. Vacío si la regla no es de tipo diario/semanal o no tiene horas.
+func TimesList(rule Rule) []string {
+	hms, err := horasEfectivas(rule)
+	if err != nil {
+		return nil
+	}
+	out := make([]string, len(hms))
+	for i, h := range hms {
+		out[i] = fmt.Sprintf("%02d:%02d", h.hh, h.mm)
+	}
+	return out
 }
 
 // IdempotencyKey es la clave única de FR-016: una tarea, un instante.

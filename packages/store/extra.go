@@ -61,10 +61,10 @@ func (db *DB) UpdateTask(t Task, prompt string) error {
 	now := Now()
 	if _, err := tx.Exec(`UPDATE tasks SET name=?, agent=?, conversation_mode=?, session_ref_id=?,
 		schedule_rule=?, timezone=?, misfire_policy=?, max_lateness_seconds=?, permission_profile=?,
-		timeout_seconds=?, max_budget_usd=?, daily_budget_usd=?, updated_at=? WHERE id=?`,
+		timeout_seconds=?, max_budget_usd=?, daily_budget_usd=?, autocompact=?, updated_at=? WHERE id=?`,
 		t.Name, t.Agent, t.ConversationMode, t.SessionRefID, t.ScheduleRule, t.Timezone,
 		t.MisfirePolicy, maxOr(t.MaxLatenessSeconds, 7200), t.PermissionProfile, t.TimeoutSeconds,
-		t.MaxBudgetUSD, t.DailyBudgetUSD, now, t.ID); err != nil {
+		t.MaxBudgetUSD, t.DailyBudgetUSD, t.Autocompact, now, t.ID); err != nil {
 		return err
 	}
 	var actual string

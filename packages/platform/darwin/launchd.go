@@ -19,7 +19,8 @@ const prefijoLabel = "com.argalla.taskkeeper."
 type EspecDisparador struct {
 	Tipo     string // once | daily | weekly
 	Inicio   time.Time
-	Weekdays []int // ISO: 1=lunes .. 7=domingo
+	Horas    []time.Time // varias horas por día (si vacío, se usa Inicio)
+	Weekdays []int       // ISO: 1=lunes .. 7=domingo
 }
 
 func labelDe(taskID string) string { return prefijoLabel + taskID }
@@ -137,15 +138,24 @@ func renderPlist(label, comando, argumentos string, spec EspecDisparador) (strin
 }
 
 func renderCalendario(spec EspecDisparador) (string, error) {
-	hh, mm := spec.Inicio.Hour(), spec.Inicio.Minute()
+	horas := spec.Horas
+	if len(horas) == 0 {
+		horas = []time.Time{spec.Inicio}
+	}
 	switch spec.Tipo {
 	case "once":
+		t := horas[0]
 		return fmt.Sprintf(`  <key>StartCalendarInterval</key>
   <dict><key>Month</key><integer>%d</integer><key>Day</key><integer>%d</integer><key>Hour</key><integer>%d</integer><key>Minute</key><integer>%d</integer></dict>`,
-			int(spec.Inicio.Month()), spec.Inicio.Day(), hh, mm), nil
+			int(t.Month()), t.Day(), t.Hour(), t.Minute()), nil
 	case "daily":
-		return fmt.Sprintf(`  <key>StartCalendarInterval</key>
-  <dict><key>Hour</key><integer>%d</integer><key>Minute</key><integer>%d</integer></dict>`, hh, mm), nil
+		var b strings.Builder
+		b.WriteString("  <key>StartCalendarInterval</key>\n  <array>")
+		for _, t := range horas {
+			fmt.Fprintf(&b, "\n    <dict><key>Hour</key><integer>%d</integer><key>Minute</key><integer>%d</integer></dict>", t.Hour(), t.Minute())
+		}
+		b.WriteString("\n  </array>")
+		return b.String(), nil
 	case "weekly":
 		if len(spec.Weekdays) == 0 {
 			return "", fmt.Errorf("regla semanal sin días")
@@ -158,7 +168,9 @@ func renderCalendario(spec EspecDisparador) (string, error) {
 			if w == 7 {
 				w = 0
 			}
-			fmt.Fprintf(&b, "\n    <dict><key>Weekday</key><integer>%d</integer><key>Hour</key><integer>%d</integer><key>Minute</key><integer>%d</integer></dict>", w, hh, mm)
+			for _, t := range horas {
+				fmt.Fprintf(&b, "\n    <dict><key>Weekday</key><integer>%d</integer><key>Hour</key><integer>%d</integer><key>Minute</key><integer>%d</integer></dict>", w, t.Hour(), t.Minute())
+			}
 		}
 		b.WriteString("\n  </array>")
 		return b.String(), nil

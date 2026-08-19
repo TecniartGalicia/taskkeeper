@@ -209,3 +209,21 @@ func TestCodexHoraDeReinicio(t *testing.T) {
 		t.Errorf("sin fecha reconocible debe devolver cero")
 	}
 }
+
+// F4: --autocompact solo aparece cuando la tarea lo pide.
+func TestComandoClaudeAutocompact(t *testing.T) {
+	c := &Claude{ruta: "C:/falso/claude.exe", version: "2.1.234"}
+	base := Peticion{Prompt: "x", Modo: ModoNuevo, NuevaSesionID: "s", DirTrabajo: "C:/p", Perfil: PerfilAuditoria}
+
+	// Sin valor: no se pasa el flag.
+	cmd, _ := c.Comando(base)
+	if strings.Contains(strings.Join(cmd.Args, " "), "--autocompact") {
+		t.Errorf("no debería aparecer --autocompact cuando está vacío")
+	}
+	// Con valor: aparece tal cual.
+	base.Autocompact = "300k"
+	cmd2, _ := c.Comando(base)
+	if !strings.Contains(strings.Join(cmd2.Args, " "), "--autocompact 300k") {
+		t.Errorf("falta --autocompact 300k en: %s", strings.Join(cmd2.Args, " "))
+	}
+}

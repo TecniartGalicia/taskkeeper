@@ -68,7 +68,7 @@ func TestElXMLLlevaUsuarioResuelto(t *testing.T) {
 	if uid == "" || strings.Contains(uid, "%") {
 		t.Fatalf("usuario mal resuelto: %q", uid)
 	}
-	trig, _ := renderTrigger(TriggerSpec{Tipo: "daily", Inicio: time.Now()})
+	trig, _ := renderTriggers(TriggerSpec{Tipo: "daily", Inicio: time.Now()})
 	xml := renderTaskXML(uid, trig, "cmd.exe", "/c exit 0")
 	if !strings.Contains(xml, "<UserId>"+uid+"</UserId>") {
 		t.Errorf("el XML no incrusta el usuario resuelto")
@@ -94,7 +94,7 @@ func TestDisparadoresGenerados(t *testing.T) {
 		{TriggerSpec{Tipo: "cada-luna-llena", Inicio: time.Now()}, "", true},
 	}
 	for _, c := range casos {
-		got, err := renderTrigger(c.spec)
+		got, err := renderTriggers(c.spec)
 		if c.falla {
 			if err == nil {
 				t.Errorf("%q debería fallar", c.spec.Tipo)
@@ -158,4 +158,22 @@ func diferencia(a, b map[string]bool) []string {
 		}
 	}
 	return d
+}
+
+// Varias horas producen varios <CalendarTrigger> dentro de la misma tarea.
+func TestVariasHorasDosTriggers(t *testing.T) {
+	spec := TriggerSpec{Tipo: "daily", Horas: []time.Time{
+		time.Date(2030, 1, 1, 15, 0, 0, 0, time.Local),
+		time.Date(2030, 1, 1, 20, 0, 0, 0, time.Local),
+	}}
+	got, err := renderTriggers(spec)
+	if err != nil {
+		t.Fatalf("renderTriggers: %v", err)
+	}
+	if n := strings.Count(got, "<CalendarTrigger>"); n != 2 {
+		t.Fatalf("se esperaban 2 disparadores, hay %d: %s", n, got)
+	}
+	if !strings.Contains(got, "T15:00:00") || !strings.Contains(got, "T20:00:00") {
+		t.Errorf("faltan las horas 15:00 y 20:00 en el XML: %s", got)
+	}
 }

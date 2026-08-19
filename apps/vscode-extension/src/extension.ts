@@ -8,6 +8,7 @@ import { watchMarker } from './core/watch';
 import { BASE_SCHEME, BaseContentProvider, RUN_SCHEME, RunDetailsProvider, openFileDiff, openRunDiff, showRunDetails } from './ui/diff';
 import { FileItem, HistoryProvider, InboxProvider, RunItem, TaskItem, TasksProvider, stateLabel } from './ui/trees';
 import { runNewTaskWizard } from './ui/wizard';
+import { openTaskPanel } from './ui/taskPanel';
 
 const t = vscode.l10n.t;
 
@@ -85,7 +86,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   reg('taskkeeper.refresh', refreshAll);
 
+  // The visual panel is the main way to create a task; the seven-step wizard
+  // stays as an accessible, keyboard-only "quick add".
   reg('taskkeeper.newTask', async () => {
+    const c = need();
+    if (!vscode.workspace.isTrusted) {
+      vscode.window.showWarningMessage(t('Creating a task runs an agent on that repository, so it needs a trusted workspace.'));
+      return;
+    }
+    const agents = await c.agents();
+    const cfg = vscode.workspace.getConfiguration('taskkeeper');
+    await openTaskPanel(c, agents, cfg.get<string>('defaultTimezone', ''));
+  });
+
+  reg('taskkeeper.newTaskQuick', async () => {
     const c = need();
     if (!vscode.workspace.isTrusted) {
       vscode.window.showWarningMessage(t('Creating a task runs an agent on that repository, so it needs a trusted workspace.'));
@@ -104,6 +118,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     } else {
       vscode.window.showInformationMessage(t('Task created. Next run: {0}.', created.next_run_local));
     }
+  });
+
+  reg('taskkeeper.editTask', async (item?: TaskItem) => {
+    const c = need();
+    if (!vscode.workspace.isTrusted) {
+      vscode.window.showWarningMessage(t('Creating a task runs an agent on that repository, so it needs a trusted workspace.'));
+      return;
+    }
+    const id = item?.task.id ?? (await pickTaskId(c));
+    if (!id) return;
+    const [agents, task] = await Promise.all([c.agents(), c.task(id)]);
+    const cfg = vscode.workspace.getConfiguration('taskkeeper');
+    await openTaskPanel(c, agents, cfg.get<string>('defaultTimezone', ''), task);
   });
 
   reg('taskkeeper.runNow', async (item?: TaskItem) => {

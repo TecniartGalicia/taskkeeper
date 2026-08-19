@@ -37,6 +37,7 @@ type Peticion struct {
 	MaxTurnos       int
 	MaxPresupuesto  float64
 	FicheroSettings string // perfil de permisos controlado, para Claude
+	Autocompact     string // ventana de autocompactación de Claude Code (auto | tokens); vacío = por defecto
 }
 
 type TipoEvento string

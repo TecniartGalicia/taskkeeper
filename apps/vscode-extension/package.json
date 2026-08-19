@@ -201,6 +201,17 @@
         "command": "taskkeeper.showEnvironment",
         "title": "%cmd.showEnvironment%",
         "category": "TaskKeeper"
+      },
+      {
+        "command": "taskkeeper.newTaskQuick",
+        "title": "%cmd.newTaskQuick%",
+        "category": "TaskKeeper"
+      },
+      {
+        "command": "taskkeeper.editTask",
+        "title": "%cmd.editTask%",
+        "category": "TaskKeeper",
+        "icon": "$(settings-gear)"
       }
     ],
     "menus": {
@@ -276,6 +287,11 @@
           "command": "taskkeeper.deleteTask",
           "when": "view == taskkeeper.tasks && viewItem =~ /^task\\./",
           "group": "navigation@9"
+        },
+        {
+          "command": "taskkeeper.editTask",
+          "when": "view == taskkeeper.tasks && viewItem =~ /^task./",
+          "group": "navigation@0"
         }
       ],
       "commandPalette": [
@@ -330,6 +346,12 @@
         {
           "command": "taskkeeper.archive",
           "when": "false"
+        },
+        {
+          "command": "taskkeeper.newTaskQuick"
+        },
+        {
+          "command": "taskkeeper.editTask"
         }
       ]
     },

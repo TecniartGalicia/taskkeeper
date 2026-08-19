@@ -248,6 +248,7 @@ func Ejecutar(ctx context.Context, db *store.DB, d Deps, o Opciones,
 		Perfil:         adapters.Perfil(task.PermissionProfile),
 		MaxTurnos:      40,
 		MaxPresupuesto: nz(task.MaxBudgetUSD.Float64, task.MaxBudgetUSD.Valid),
+		Autocompact:    task.Autocompact,
 	})
 	if err != nil {
 		db.Transition(run.ID, store.StateFailed, err.Error())

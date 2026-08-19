@@ -664,3 +664,33 @@ Fecha: 2026-08-19.
 - **Firma de código del worker**: requiere certificado Authenticode (Windows) / Apple Developer ID (macOS) que no está disponible; sin él, SmartScreen puede avisar en el primer arranque. No bloquea el *preview*.
 - **`target` macOS**: el código cruza-compila; sale como paquete de plataforma propio cuando se verifique en hardware real (matar árbol de procesos, disparo de launchd, reintento por cuota).
 - **Redes / anuncio**: X, dev.to, HN, etc. (yo redacto; publica el humano).
+
+## 24. Plan auditado — Panel visual de tarea (v0.2.0)
+
+Fecha: 2026-08-19. Sustituir los 7 diálogos por un panel Webview, en fases, auditando entre cada una. Regla de oro: **el panel NO reimplementa lógica**; llama al mismo `ctl crear/editar/tarea` y a un nuevo `ctl previsualizar` para la matemática de fechas (que sigue viviendo solo en Go, `packages/scheduler`).
+
+### F1 — Panel de creación (Webview)
+- `src/ui/taskPanel.ts`: `vscode.window.createWebviewPanel`, CSP con nonce, tema por variables `--vscode-*`. HTML/CSS/JS embebidos (sin recursos externos, la CSP los bloquea).
+- Mensajería extensión↔webview: `ready`→datos iniciales (agentes, carpetas del workspace, zona por defecto, plantilla de prompt); `browseRepo`→diálogo de carpeta; `listSessions`→sesiones de esa carpeta; `submit`→`ctl.create` (+ `runNow`). Cadenas l10n (ES/EN) pasadas al webview.
+- `taskkeeper.newTask` abre el panel; el asistente actual queda como `taskkeeper.newTaskQuick` (accesible, teclado).
+- Reutiliza `createArgs`/`CreateParams` de `ctl.ts` sin cambios.
+- **Auditoría F1**: typecheck+lint+unit; un test unitario del generador de HTML (nonce presente, CSP presente, sin `http`); un test del reductor de mensajes→CreateParams; `ctl crear` real desde los mismos params; verificar que el asistente rápido sigue vivo.
+
+### F2 — Varias horas por tarea + «próxima ejecución» en vivo
+- `packages/scheduler`: `Rule.Times []string` (retrocompat: si `Times` vacío, se usa `Time`). `Next`/`Previous` iteran todas las horas y eligen la primera/última que cumpla el `After`/`!After`. Nuevas pruebas DST y multi-hora.
+- `packages/platform` (Windows + darwin): `EspecDisparador.Horas []time.Time` y varios `<CalendarTrigger>`/`StartCalendarInterval`. Registrar N disparadores en una sola tarea del SO.
+- `apps/ctl`: `--hora` acepta lista `15:00,20:00`; `construirRegla`/`registrar` propagan. Nuevo `ctl previsualizar --regla --hora --dias --zona` → próximas 3 ocurrencias (locales) SIN crear tarea.
+- Panel: chips de hora (añadir/quitar) + línea «Próxima ejecución» que llama a `previsualizar` (debounce) por la extensión.
+- **Auditoría F2**: pruebas del scheduler (multi-hora Next/Previous, orden, DST); test de integración Windows que una tarea de dos horas registra dos triggers y dispara; `ctl previsualizar` real; `ctl crear --hora 15:00,20:00` real y comprobar los dos triggers en `schtasks /Query`.
+
+### F3 — Editar en el mismo panel
+- El panel acepta un `taskId`: precarga vía `ctl.task(id)` (nombre, agente, prompt, regla, permisos, misfire, presupuesto, sesión) y guarda con `ctl.edit`. Validación en el sitio.
+- `taskkeeper.editTask` abre el panel en modo edición; se mantiene `editPrompt` para el prompt suelto.
+- **Auditoría F3**: round-trip real crear→editar (cambiar horas y prompt)→leer y comprobar.
+
+### F4 — Compactar/resumir la conversación (a confirmar por investigación)
+- Opción por tarea para conversaciones largas en modo continuar/derivar. **El disparador NO es «exit 1» genérico** (taparía fallos reales): se detecta la condición concreta de contexto excedido. El mecanismo exacto (autocompactación nativa de Claude Code vs. resumen-y-reinicio) se fija con la investigación en curso; si Claude Code ya autocompacta en headless, F4 puede ser solo exponer/confirmar ese comportamiento y no reintentar a ciegas.
+- **Auditoría F4**: según el mecanismo confirmado.
+
+### Auditoría final
+- Toda la suite Go + cross-compila; unit+integración de la extensión; E2E real (crear por panel, multi-hora, editar); empaquetar VSIX; publicar 0.2.0 por tag.

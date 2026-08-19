@@ -70,6 +70,11 @@ func main() {
 		out.ok(map[string]string{"version": version}, func() { fmt.Println("taskkeeper-ctl", version) })
 		return
 	}
+	// previsualizar es cálculo puro (no toca la base): lo llama el panel a menudo.
+	if resto[0] == "previsualizar" {
+		previsualizar(out, resto[1:])
+		return
+	}
 
 	cfg := config.Cargar()
 	if err := cfg.Preparar(); err != nil {
@@ -160,7 +165,7 @@ func uso() {
 
 type opcionesTarea struct {
 	proyecto, nombre, agente, prompt, regla, hora, dias, zona, perfil, rama string
-	modo, sesion, politica                                                  string
+	modo, sesion, politica, autocompact                                     string
 	retrasoMax, timeout                                                     int
 	presupuesto, presupuestoDiario                                          float64
 }
@@ -187,8 +192,8 @@ func parsearOpciones(nombre string, args []string, base *store.Task, promptBase 
 			dRegla = string(r.Type)
 			if r.Type == scheduler.RuleOnce {
 				dHora = r.AtLocal
-			} else if r.Time != "" {
-				dHora = r.Time
+			} else if hs := scheduler.TimesList(r); len(hs) > 0 {
+				dHora = strings.Join(hs, ",")
 			}
 			var ds []string
 			for _, d := range r.Weekdays {
@@ -206,6 +211,11 @@ func parsearOpciones(nombre string, args []string, base *store.Task, promptBase 
 	fs.StringVar(&o.modo, "modo", def(modoDe(base), "new"), "new | resume | fork")
 	fs.StringVar(&o.sesion, "sesion", "", "identificador de sesión para resume o fork")
 	fs.StringVar(&o.politica, "politica", def(politicaDe(base), "skip"), "skip | run_if_late | manual")
+	dAutocompact := ""
+	if base != nil {
+		dAutocompact = base.Autocompact
+	}
+	fs.StringVar(&o.autocompact, "autocompact", dAutocompact, "ventana de autocompactación de Claude Code (auto | tokens); vacío = por defecto")
 	dRetraso, dTimeout, dPres, dPresDia := 7200, 3600, 0.0, 0.0
 	if base != nil {
 		dRetraso, dTimeout = base.MaxLatenessSeconds, base.TimeoutSeconds
@@ -276,12 +286,13 @@ func crear(out salida, db *store.DB, cfg config.Config, args []string) {
 		PermissionProfile: o.perfil, TimeoutSeconds: o.timeout,
 		MaxBudgetUSD:   store.NullFloat(o.presupuesto),
 		DailyBudgetUSD: store.NullFloat(o.presupuestoDiario),
+		Autocompact:    o.autocompact,
 	}, o.prompt)
 	if err != nil {
 		out.fallo(err)
 	}
 
-	if err := registrar(cfg, task.ID, regla, occ); err != nil {
+	if err := registrar(cfg, task.ID, o.zona, regla, occ); err != nil {
 		db.DeleteTask(task.ID) // no dejar una tarea sin disparador
 		out.fallo(fmt.Errorf("registrando el disparador: %w", err))
 	}
@@ -334,6 +345,7 @@ func editar(out salida, db *store.DB, cfg config.Config, args []string) {
 	nueva.ConversationMode = o.modo
 	nueva.MaxBudgetUSD = store.NullFloat(o.presupuesto)
 	nueva.DailyBudgetUSD = store.NullFloat(o.presupuestoDiario)
+	nueva.Autocompact = o.autocompact
 	if o.sesion != "" {
 		sid, err := db.UpsertSessionRef(o.agente, o.sesion, base.ProjectID)
 		if err != nil {
@@ -346,7 +358,7 @@ func editar(out salida, db *store.DB, cfg config.Config, args []string) {
 		out.fallo(err)
 	}
 	if base.Enabled {
-		if err := registrar(cfg, id, regla, occ); err != nil {
+		if err := registrar(cfg, id, o.zona, regla, occ); err != nil {
 			out.fallo(fmt.Errorf("actualizando el disparador: %w", err))
 		}
 	}
@@ -358,10 +370,71 @@ func editar(out salida, db *store.DB, cfg config.Config, args []string) {
 		func() { fmt.Printf("tarea %s actualizada; próxima ejecución %s\n", id, occ.ResolvedLocal) })
 }
 
+// previsualizar devuelve las próximas ocurrencias de una regla, sin crear nada.
+// La matemática de fechas vive solo aquí (Go); el panel nunca la reimplementa.
+func previsualizar(out salida, args []string) {
+	fs := flag.NewFlagSet("previsualizar", flag.ExitOnError)
+	var regla, hora, dias, zona string
+	fs.StringVar(&regla, "regla", "daily", "daily | weekly | once")
+	fs.StringVar(&hora, "hora", "", "HH:MM (varias con coma), o fecha completa en once")
+	fs.StringVar(&dias, "dias", "", "días ISO separados por coma, para weekly")
+	fs.StringVar(&zona, "zona", "Europe/Madrid", "zona horaria IANA")
+	fs.Parse(args)
+
+	r := scheduler.Rule{Type: scheduler.RuleType(regla)}
+	if regla == "once" {
+		r.AtLocal = hora
+	} else {
+		for _, h := range strings.Split(hora, ",") {
+			if h = strings.TrimSpace(h); h != "" {
+				r.Times = append(r.Times, h)
+			}
+		}
+	}
+	for _, d := range strings.Split(dias, ",") {
+		if d = strings.TrimSpace(d); d != "" {
+			if n, err := strconv.Atoi(d); err == nil {
+				r.Weekdays = append(r.Weekdays, n)
+			}
+		}
+	}
+
+	loc, _ := time.LoadLocation(zona)
+	next := []string{}
+	after := time.Now().UTC()
+	for i := 0; i < 3; i++ {
+		occ, err := scheduler.Next(r, zona, after)
+		if err != nil {
+			out.fallo(err)
+		}
+		if occ == nil {
+			break
+		}
+		tt := occ.ScheduledForUTC
+		if loc != nil {
+			tt = tt.In(loc)
+		}
+		next = append(next, tt.Format("Mon 02 Jan · 15:04"))
+		after = occ.ScheduledForUTC
+	}
+	out.ok(map[string]any{"next": next}, func() {
+		for _, n := range next {
+			fmt.Println(n)
+		}
+	})
+}
+
 func construirRegla(o opcionesTarea) (scheduler.Rule, *scheduler.Occurrence, []string, error) {
-	r := scheduler.Rule{Type: scheduler.RuleType(o.regla), Time: o.hora}
+	r := scheduler.Rule{Type: scheduler.RuleType(o.regla)}
 	if o.regla == "once" {
-		r.AtLocal, r.Time = o.hora, ""
+		r.AtLocal = o.hora
+	} else {
+		// --hora admite varias separadas por coma: "15:00,20:00".
+		for _, h := range strings.Split(o.hora, ",") {
+			if h = strings.TrimSpace(h); h != "" {
+				r.Times = append(r.Times, h)
+			}
+		}
 	}
 	for _, d := range strings.Split(o.dias, ",") {
 		if d = strings.TrimSpace(d); d != "" {
@@ -387,9 +460,24 @@ func construirRegla(o opcionesTarea) (scheduler.Rule, *scheduler.Occurrence, []s
 	return r, occ, avisos, nil
 }
 
-func registrar(cfg config.Config, taskID string, r scheduler.Rule, occ *scheduler.Occurrence) error {
+func registrar(cfg config.Config, taskID, zona string, r scheduler.Rule, occ *scheduler.Occurrence) error {
+	// Un StartBoundary por cada hora del día: así "todos los días a las 15:00 y
+	// 20:00" se convierte en dos disparadores del sistema.
+	var horas []time.Time
+	if r.Type != scheduler.RuleOnce {
+		now := time.Now().UTC()
+		for _, h := range scheduler.TimesList(r) {
+			sub := scheduler.Rule{Type: r.Type, Time: h, Weekdays: r.Weekdays}
+			if o, err := scheduler.Next(sub, zona, now); err == nil && o != nil {
+				horas = append(horas, o.ScheduledForUTC.Local())
+			}
+		}
+	}
+	if len(horas) == 0 {
+		horas = []time.Time{occ.ScheduledForUTC.Local()}
+	}
 	spec := platform.EspecDisparador{
-		Tipo: string(r.Type), Inicio: occ.ScheduledForUTC.Local(), Weekdays: r.Weekdays,
+		Tipo: string(r.Type), Inicio: horas[0], Horas: horas, Weekdays: r.Weekdays,
 	}
 	return platform.RegistrarTarea(taskID, cfg.Worker, "--run "+taskID, spec)
 }
@@ -404,6 +492,8 @@ type tareaJSON struct {
 	Agente               string   `json:"agente"`
 	Activa               bool     `json:"activa"`
 	Modo                 string   `json:"modo"`
+	SesionExterna        string   `json:"sesion_externa"`
+	Autocompact          string   `json:"autocompact"`
 	Regla                string   `json:"regla"`
 	Zona                 string   `json:"zona"`
 	Perfil               string   `json:"perfil"`
@@ -423,11 +513,16 @@ func aJSON(db *store.DB, t *store.Task) tareaJSON {
 	j := tareaJSON{
 		ID: t.ID, Nombre: t.Name, Agente: t.Agent, Activa: t.Enabled,
 		Modo: t.ConversationMode, Regla: t.ScheduleRule, Zona: t.Timezone,
-		Perfil: t.PermissionProfile, Politica: t.MisfirePolicy,
+		Perfil: t.PermissionProfile, Politica: t.MisfirePolicy, Autocompact: t.Autocompact,
 		TimeoutSeg: t.TimeoutSeconds, RetrasoMaxSeg: t.MaxLatenessSeconds,
 	}
 	if p, err := db.GetProject(t.ProjectID); err == nil {
 		j.Proyecto, j.RutaProyecto = p.Name, p.WorkspacePath
+	}
+	if t.SessionRefID.Valid && t.SessionRefID.String != "" {
+		if ref, err := db.GetSessionRef(t.SessionRefID.String); err == nil && ref != nil {
+			j.SesionExterna = ref.ExternalID
+		}
 	}
 	if t.MaxBudgetUSD.Valid {
 		v := t.MaxBudgetUSD.Float64
@@ -514,7 +609,7 @@ func activar(out salida, db *store.DB, cfg config.Config, args []string, activa 
 		if err != nil || occ == nil {
 			out.fallo(fmt.Errorf("la regla ya no produce ocurrencias; edita la tarea"))
 		}
-		if err := registrar(cfg, id, r, occ); err != nil {
+		if err := registrar(cfg, id, t.Timezone, r, occ); err != nil {
 			out.fallo(err)
 		}
 	} else {

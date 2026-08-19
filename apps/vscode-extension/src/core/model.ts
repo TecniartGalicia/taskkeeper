@@ -25,6 +25,8 @@ export interface Task {
   agente: 'claude' | 'codex' | string;
   activa: boolean;
   modo: 'new' | 'resume' | 'fork' | string;
+  sesion_externa?: string;
+  autocompact?: string;
   regla: string; // JSON of the scheduler rule
   zona: string;
   perfil: 'auditoria' | 'cambios_aislados' | string;
@@ -94,6 +96,7 @@ export interface ScheduleRule {
   type: 'once' | 'daily' | 'weekly';
   at_local?: string;
   time?: string;
+  times?: string[];
   weekdays?: number[];
 }
 

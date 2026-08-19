@@ -16,6 +16,7 @@ var errNoSoportado = errors.New("taskkeeper: esta plataforma no está soportada 
 type EspecDisparador struct {
 	Tipo     string
 	Inicio   time.Time
+	Horas    []time.Time
 	Weekdays []int
 }
 

@@ -141,3 +141,57 @@ func TestReglasInvalidas(t *testing.T) {
 		}
 	}
 }
+
+// Varias horas por día: Next elige la más próxima; Previous la última pasada.
+func TestVariasHorasPorDia(t *testing.T) {
+	r := Rule{Type: RuleDaily, Times: []string{"20:00", "15:00"}} // desordenadas a propósito
+	tz := "Europe/Madrid"
+	// A las 12:00 la próxima es 15:00; a las 16:00 la próxima es 20:00; a las 21:00 salta a mañana 15:00.
+	casos := []struct {
+		ahoraLocal string
+		esperaHHMM string
+		esperaDia  int // desplazamiento de día respecto al de ahora
+	}{
+		{"2026-03-10T12:00", "15:00", 0},
+		{"2026-03-10T16:00", "20:00", 0},
+		{"2026-03-10T21:00", "15:00", 1},
+	}
+	loc, _ := time.LoadLocation(tz)
+	for _, c := range casos {
+		ahora, _ := time.ParseInLocation(localLayout, c.ahoraLocal, loc)
+		occ, err := Next(r, tz, ahora.UTC())
+		if err != nil || occ == nil {
+			t.Fatalf("%s: Next err=%v occ=%v", c.ahoraLocal, err, occ)
+		}
+		got := occ.ScheduledForUTC.In(loc)
+		if got.Format("15:04") != c.esperaHHMM {
+			t.Errorf("%s: próxima hora = %s, se esperaba %s", c.ahoraLocal, got.Format("15:04"), c.esperaHHMM)
+		}
+		if got.Day() != ahora.Day()+c.esperaDia {
+			t.Errorf("%s: día = %d, se esperaba +%d", c.ahoraLocal, got.Day(), c.esperaDia)
+		}
+	}
+
+	// Previous: a las 16:00 la última fue 15:00 hoy; a las 12:00 fue 20:00 de ayer.
+	ahora, _ := time.ParseInLocation(localLayout, "2026-03-10T16:00", loc)
+	prev, err := Previous(r, tz, ahora.UTC())
+	if err != nil || prev == nil {
+		t.Fatalf("Previous err=%v", err)
+	}
+	if prev.ScheduledForUTC.In(loc).Format("15:04") != "15:00" {
+		t.Errorf("Previous a las 16:00 = %s, se esperaba 15:00", prev.ScheduledForUTC.In(loc).Format("15:04"))
+	}
+	ahora2, _ := time.ParseInLocation(localLayout, "2026-03-10T12:00", loc)
+	prev2, _ := Previous(r, tz, ahora2.UTC())
+	if prev2 == nil || prev2.ScheduledForUTC.In(loc).Format("15:04") != "20:00" {
+		t.Errorf("Previous a las 12:00 debía ser 20:00 de ayer, fue %v", prev2)
+	}
+}
+
+// Retrocompat: una regla antigua con solo Time sigue funcionando.
+func TestRetrocompatUnaHora(t *testing.T) {
+	occ, err := Next(Rule{Type: RuleDaily, Time: "03:00"}, "UTC", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil || occ == nil || occ.ScheduledForUTC.Format("15:04") != "03:00" {
+		t.Fatalf("regla de una hora rota: occ=%v err=%v", occ, err)
+	}
+}

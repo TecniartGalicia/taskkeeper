@@ -76,6 +76,7 @@ func Open(path string) (*DB, error) {
 func (db *DB) migrar() error {
 	nuevas := map[string]string{
 		"max_lateness_seconds": "INTEGER NOT NULL DEFAULT 7200",
+		"autocompact":          "TEXT NOT NULL DEFAULT ''",
 	}
 	filas, err := db.Query(`PRAGMA table_info(tasks)`)
 	if err != nil {
@@ -202,6 +203,10 @@ type Task struct {
 	TimeoutSeconds               int
 	MaxBudgetUSD, DailyBudgetUSD sql.NullFloat64
 	OSTriggerID                  sql.NullString
+	// Autocompact: ventana de autocompactación que se pasa a Claude Code
+	// (--autocompact <auto|tokens>). Vacío = no pasar el flag (comportamiento
+	// por defecto del agente, que ya compacta solo al acercarse al límite).
+	Autocompact string
 }
 
 type Revision struct {
@@ -226,12 +231,12 @@ func (db *DB) CreateTask(t Task, prompt string) (*Task, *Revision, error) {
 	if _, err := tx.Exec(`INSERT INTO tasks
 		(id,name,project_id,agent,enabled,conversation_mode,session_ref_id,schedule_rule,
 		 timezone,next_run_at_utc,misfire_policy,max_lateness_seconds,permission_profile,
-		 timeout_seconds,max_budget_usd,daily_budget_usd,os_trigger_id,created_at,updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		 timeout_seconds,max_budget_usd,daily_budget_usd,os_trigger_id,autocompact,created_at,updated_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Name, t.ProjectID, t.Agent, boolToInt(t.Enabled), t.ConversationMode,
 		t.SessionRefID, t.ScheduleRule, t.Timezone, t.NextRunAtUTC, t.MisfirePolicy,
 		maxOr(t.MaxLatenessSeconds, 7200), t.PermissionProfile, t.TimeoutSeconds,
-		t.MaxBudgetUSD, t.DailyBudgetUSD, t.OSTriggerID, now, now); err != nil {
+		t.MaxBudgetUSD, t.DailyBudgetUSD, t.OSTriggerID, t.Autocompact, now, now); err != nil {
 		return nil, nil, err
 	}
 
@@ -257,11 +262,11 @@ func (db *DB) GetTask(id string) (*Task, error) {
 	var enabled int
 	err := db.QueryRow(`SELECT id,name,project_id,agent,enabled,conversation_mode,session_ref_id,
 		schedule_rule,timezone,next_run_at_utc,misfire_policy,max_lateness_seconds,
-		permission_profile,timeout_seconds,max_budget_usd,daily_budget_usd,os_trigger_id
+		permission_profile,timeout_seconds,max_budget_usd,daily_budget_usd,os_trigger_id,autocompact
 		FROM tasks WHERE id=?`, id).
 		Scan(&t.ID, &t.Name, &t.ProjectID, &t.Agent, &enabled, &t.ConversationMode, &t.SessionRefID,
 			&t.ScheduleRule, &t.Timezone, &t.NextRunAtUTC, &t.MisfirePolicy, &t.MaxLatenessSeconds,
-			&t.PermissionProfile, &t.TimeoutSeconds, &t.MaxBudgetUSD, &t.DailyBudgetUSD, &t.OSTriggerID)
+			&t.PermissionProfile, &t.TimeoutSeconds, &t.MaxBudgetUSD, &t.DailyBudgetUSD, &t.OSTriggerID, &t.Autocompact)
 	if err != nil {
 		return nil, err
 	}

@@ -108,6 +108,13 @@ export class Ctl {
   concurrency(): Promise<{ cupo: number }> {
     return this.call('cupo');
   }
+  /** F2: next occurrences of a rule, computed in Go. The panel never does date maths. */
+  preview(p: { regla: string; horas: string[]; dias?: number[]; zona: string }): Promise<{ next: string[] }> {
+    const args = ['previsualizar', '--regla', p.regla, '--hora', p.horas.join(',')];
+    if (p.dias && p.dias.length) args.push('--dias', p.dias.join(','));
+    args.push('--zona', p.zona);
+    return this.call(...args);
+  }
   setConcurrency(n: number): Promise<{ cupo: number }> {
     return this.call('cupo', String(n));
   }
@@ -162,6 +169,7 @@ export interface CreateParams {
   timeout?: number;
   presupuesto?: number;
   presupuestoDiario?: number;
+  autocompact?: string;
 }
 
 /** Builds the argument list; exported for the unit test. Never a shell string. */
@@ -188,5 +196,6 @@ export function createArgs(p: Partial<CreateParams>): string[] {
   put('--timeout', p.timeout);
   put('--presupuesto', p.presupuesto);
   put('--presupuesto-diario', p.presupuestoDiario);
+  put('--autocompact', p.autocompact);
   return a;
 }

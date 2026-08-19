@@ -11,12 +11,13 @@ import (
 type EspecDisparador struct {
 	Tipo     string
 	Inicio   time.Time
+	Horas    []time.Time
 	Weekdays []int
 }
 
 func RegistrarTarea(taskID, comando, argumentos string, spec EspecDisparador) error {
 	return dwin.Register(taskID, comando, argumentos, dwin.EspecDisparador{
-		Tipo: spec.Tipo, Inicio: spec.Inicio, Weekdays: spec.Weekdays,
+		Tipo: spec.Tipo, Inicio: spec.Inicio, Horas: spec.Horas, Weekdays: spec.Weekdays,
 	})
 }
 

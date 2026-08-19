@@ -31,7 +31,7 @@ func Previous(rule Rule, timezone string, at time.Time) (*Occurrence, error) {
 		return nil, nil
 	}
 
-	hh, mm, err := parseHourMinute(rule.Time)
+	horas, err := horasEfectivas(rule)
 	if err != nil {
 		return nil, err
 	}
@@ -45,9 +45,13 @@ func Previous(rule Rule, timezone string, at time.Time) (*Occurrence, error) {
 		if rule.Type == RuleWeekly && !containsInt(rule.Weekdays, isoWeekday(day)) {
 			continue
 		}
-		occ := materialize(day.Year(), day.Month(), day.Day(), hh, mm, loc)
-		if !occ.ScheduledForUTC.After(at) {
-			return &occ, nil
+		// Horas en orden descendente: la primera que no es posterior a `at` es la
+		// última ocurrencia prevista.
+		for k := len(horas) - 1; k >= 0; k-- {
+			occ := materialize(day.Year(), day.Month(), day.Day(), horas[k].hh, horas[k].mm, loc)
+			if !occ.ScheduledForUTC.After(at) {
+				return &occ, nil
+			}
 		}
 	}
 	return nil, nil
