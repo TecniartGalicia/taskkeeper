@@ -609,3 +609,31 @@ Fase 2 (la bandeja de la mañana y la extensión) **completa y auditada con agen
 
 - **Captura de tienda pendiente**: la captura automática de ventana se descartó porque en una máquina en uso puede capturar contenido ajeno. El *harness* de demo queda listo para una máquina limpia; el lanzamiento v0.1.0 es *preview* y puede salir sin captura.
 - **`revisado en Fase 3`**: firmar el worker (la guía lo recomienda), redacción de secretos en la vista de eventos (ya existe en el worker; falta comprobar que la extensión no muestre nada crudo).
+
+## 22. Estado tras la Fase 3 (seguridad + macOS)
+
+Fecha: 2026-08-19. Auditoría cerrada.
+
+### Seguridad
+
+- **Redacción de secretos en un único punto**: `packages/redact` borra claves conocidas (Anthropic `sk-ant-`, OpenAI `sk-`, GitHub PAT clásico y de grano fino, Slack, AWS `AKIA`, Google `ya29.`, JWT, PEM y genéricos `bearer`/`api_key=…`) y se aplica **solo** en el escritor de eventos de la base (`store.AppendEvent`) y en los campos `summary`/`error_code` de `SetRunField`. Ningún camino de escritura puede saltárselo.
+- **Verificado de extremo a extremo con un agente real**: se lanzó una tarea cuyo *prompt* ordenaba a Claude escribir `API_KEY=sk-ant-…` en un fichero del worktree. Resultado en la base: **0 apariciones del secreto crudo**, 4 eventos con marca `[redactado]`. La aceptación del cambio en el repo es decisión humana; el secreto redactado nunca sale de la base ni llega a la vista.
+- **Preserva la forma del JSON**: la sustitución mantiene el prefijo capturado (`api_key: [redactado]`) para que un *payload* siga siendo JSON válido. 12 casos de prueba, incluidos textos limpios que no debe tocar.
+
+### macOS (código que cruza-compila; VSIX aún no)
+
+- `packages/platform/darwin/group.go` — grupo de procesos con `Setpgid` y `kill(-pgid, SIGKILL)`, espejo del Job Object de Windows; `Alive` con `kill(pid, 0)`.
+- `packages/platform/darwin/launchd.go` — agentes de usuario en `~/Library/LaunchAgents` bajo el prefijo `com.argalla.taskkeeper.`, con `StartCalendarInterval` (once/daily/weekly, mapeo ISO→launchd del domingo), carga idempotente con `bootout`+`bootstrap`, reintento por cuota como agente puntual.
+- `packages/platform/{platform,tareas}_darwin.go` y `packages/runner/vivo_darwin.go` conectan la capa común.
+- **`GOOS=darwin GOARCH={amd64,arm64} go build ./...` compila**; binarios Mach-O generados y verificados con `file`. `go vet` de los paquetes portables limpio para darwin.
+- **Verdad declarada al usuario**: en macOS el equipo **no se despierta** para ejecutar (launchd ejecuta la ocurrencia perdida al volver del reposo). Es la asimetría con Windows (`RTCWAKE`), recogida en `AvisoReactivacion()`.
+- **Por qué el VSIX v0.1.0 sigue siendo solo win32-x64**: el código cruza-compila, pero honestidad de producto = no publicar el *target* darwin sin verificación en hardware real (matar el árbol de procesos, el disparo de launchd y el reintento por cuota se prueban en un Mac, no en cross-compilación). El *target* macOS sale cuando eso se verifique.
+
+### Deuda que sale de la Fase 3 sin cerrar
+
+- **Firma del worker**: la guía la recomienda para que Windows SmartScreen y Gatekeeper de macOS no marquen el binario. Requiere un certificado de firma de código (Authenticode / Apple Developer ID) que **no está disponible**. Queda anotado para el usuario: sin certificado, el worker se distribuye sin firmar y el primer arranque puede mostrar aviso de SmartScreen. No bloquea el *preview* v0.1.0 (el worker se instala desde el VSIX, no se descarga suelto), pero conviene resolverlo antes de la 1.0.
+
+### Números tras la Fase 3
+
+- **Go**: toda la suite pasa (adapters, gitwt, platform, platform/windows, redact, runner, scheduler, store, turns, integración). Cross-compila darwin/amd64 y darwin/arm64.
+- **Extensión**: 19 unitarias + 4 de integración en VS Code real.

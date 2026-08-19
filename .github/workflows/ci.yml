@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: apps/vscode-extension
+
+jobs:
+  check:
+    name: check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/vscode-extension/package-lock.json
+      # The Go worker/ctl: build and test the whole module from the repo root.
+      - name: Go build + test
+        working-directory: .
+        env:
+          GOTOOLCHAIN: local
+        run: |
+          go build ./...
+          go test ./...
+      - name: npm ci
+        run: npm ci
+      - name: Typecheck + lint + unit tests + l10n
+        env:
+          GOTOOLCHAIN: local
+        run: npm run check
+      - name: Integration tests (Linux needs a display)
+        if: runner.os == 'Linux'
+        env:
+          GOTOOLCHAIN: local
+        run: xvfb-run -a npm run test:integration
+      - name: Integration tests (Windows)
+        if: runner.os == 'Windows'
+        env:
+          GOTOOLCHAIN: local
+        run: npm run test:integration
+      # Package the win32-x64 VSIX from Linux to prove the cross-compiled worker packs.
+      - name: Package win32-x64 (smoke)
+        if: runner.os == 'Linux'
+        env:
+          GOTOOLCHAIN: local
+        run: |
+          rm -rf bin
+          node scripts/build-bin.mjs win32-x64
+          npx vsce package --no-dependencies --target win32-x64 -o taskkeeper-win32-x64.vsix
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: vsix
+          path: apps/vscode-extension/taskkeeper-win32-x64.vsix

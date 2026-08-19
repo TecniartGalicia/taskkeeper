@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/argalla/taskkeeper/packages/redact"
 	_ "modernc.org/sqlite" // Go puro: sin cgo, sin cadena de compilación C
 )
 
@@ -437,6 +438,11 @@ func (db *DB) SetRunField(runID, col string, v any) error {
 	default:
 		return fmt.Errorf("columna no permitida: %s", col)
 	}
+	if col == "summary" || col == "error_code" {
+		if str, ok := v.(string); ok {
+			v = redact.String(str)
+		}
+	}
 	_, err := db.Exec(`UPDATE runs SET `+col+`=? WHERE id=?`, v, runID)
 	if err == nil {
 		db.notify()
@@ -480,6 +486,10 @@ func (db *DB) CancelRequested(runID string) bool {
 // ---------- eventos y evidencia ----------
 
 func (db *DB) AppendEvent(runID, eventType, payloadJSON string) error {
+	// Único sitio donde la salida del agente llega a la base: se redacta aquí
+	// para que ningún camino pueda saltárselo. La salida puede contener claves
+	// que el agente leyó de un fichero de configuración.
+	payloadJSON = redact.String(payloadJSON)
 	_, err := db.Exec(`INSERT INTO run_events (run_id,sequence,event_type,payload_json,created_at)
 		VALUES (?, (SELECT COALESCE(MAX(sequence),0)+1 FROM run_events WHERE run_id=?), ?,?,?)`,
 		runID, runID, eventType, payloadJSON, Now())

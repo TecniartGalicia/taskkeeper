@@ -4,6 +4,7 @@
 //
 //   node scripts/build-bin.mjs                 → host platform only
 //   node scripts/build-bin.mjs --all           → win32-x64, darwin-x64, darwin-arm64
+//   node scripts/build-bin.mjs win32-x64       → just that target (cross-compiled; used by CI)
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,7 +20,12 @@ const TARGETS = {
   'darwin-arm64': { GOOS: 'darwin', GOARCH: 'arm64', exe: '' },
 };
 const host = `${process.platform}-${process.arch}`;
-const wanted = process.argv.includes('--all') ? Object.keys(TARGETS) : [host];
+const explicit = process.argv.slice(2).filter((a) => !a.startsWith('--'));
+const wanted = process.argv.includes('--all')
+  ? Object.keys(TARGETS)
+  : explicit.length > 0
+    ? explicit
+    : [host];
 
 for (const target of wanted) {
   const t = TARGETS[target];
