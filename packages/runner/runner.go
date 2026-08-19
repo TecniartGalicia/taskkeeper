@@ -219,9 +219,29 @@ func Ejecutar(ctx context.Context, db *store.DB, d Deps, o Opciones,
 	// si este proceso se va sin cancelar nada.
 	defer grupo.Close()
 
+	// Continuar/derivar necesitan el id de sesión externo del proveedor, que vive
+	// en el session_ref. Sin resolverlo, el agente arranca con `--resume` vacío y
+	// falla con "requires a valid session ID" antes de dar una sola vuelta.
+	var sesionExterna string
+	if m := adapters.Modo(task.ConversationMode); m == adapters.ModoRetomar || m == adapters.ModoDerivar {
+		if !task.SessionRefID.Valid || task.SessionRefID.String == "" {
+			db.SetRunField(run.ID, "error_code", "sin_referencia_sesion")
+			db.Transition(run.ID, store.StateFailed, "la tarea continúa o deriva una conversación pero no guarda su referencia de sesión")
+			return nil
+		}
+		ref, err := db.GetSessionRef(task.SessionRefID.String)
+		if err != nil || ref == nil || ref.ExternalID == "" {
+			db.SetRunField(run.ID, "error_code", "sesion_no_resuelta")
+			db.Transition(run.ID, store.StateFailed, "no se pudo resolver la conversación a continuar o derivar (session_ref inválido)")
+			return nil
+		}
+		sesionExterna = ref.ExternalID
+	}
+
 	cmd, err := ad.Comando(adapters.Peticion{
 		Prompt:         rev.Prompt,
 		Modo:           adapters.Modo(task.ConversationMode),
+		SesionExterna:  sesionExterna,
 		NuevaSesionID:  uuidDe(run.ID),
 		DirTrabajo:     proj.WorkspacePath,
 		Worktree:       wt.Path,

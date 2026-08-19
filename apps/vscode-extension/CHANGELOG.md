@@ -1,5 +1,12 @@
 # Changelog
 
+
+## 0.1.1 — 2026-08-19
+
+Corrección de un fallo encontrado en uso real:
+
+- **Continuar/derivar una conversación ya funciona.** En 0.1.0 una tarea con «Resume» o «Fork» arrancaba el agente sin el id de la conversación (`--resume` vacío) y fallaba al instante, sin gastar nada. Ahora el runner resuelve el id de sesión guardado y lo pasa al agente; si la tarea no tiene una referencia de sesión válida, falla con un motivo claro (`sin_referencia_sesion`) en vez del error críptico del agente.
+
 ## 0.1.0 — 2026-08-19 (pre-release)
 
 First public release. Windows x64.

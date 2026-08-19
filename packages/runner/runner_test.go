@@ -4,6 +4,7 @@ package runner
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,7 +23,10 @@ import (
 // flujo de eventos que Claude Code y se le puede pedir que tarde, que falle por
 // credencial o que lance un nieto.
 
-type agenteFalso struct{ guion string }
+type agenteFalso struct {
+	guion   string
+	captura *adapters.Peticion // si no es nil, guarda la última Peticion recibida
+}
 
 func (a *agenteFalso) Nombre() string { return "falso" }
 func (a *agenteFalso) Detectar() (*adapters.Instalacion, error) {
@@ -36,6 +40,9 @@ func (a *agenteFalso) Parsear(l []byte) (adapters.Evento, bool) {
 	return (&adapters.Claude{}).Parsear(l)
 }
 func (a *agenteFalso) Comando(p adapters.Peticion) (*exec.Cmd, error) {
+	if a.captura != nil {
+		*a.captura = p
+	}
 	cmd := exec.Command(os.Args[0], "-test.run=TestAyudanteAgente")
 	cmd.Env = append(os.Environ(), "TK_ROL=agente", "TK_GUION="+a.guion,
 		"TK_WT="+p.Worktree)
@@ -308,4 +315,84 @@ func extraerPID(s string) int {
 		n = n*10 + int(c-'0')
 	}
 	return n
+}
+
+// Regresión del bug encontrado en producción (v0.1.0): una tarea que RETOMA o
+// DERIVA una conversación debe pasar al agente el id de sesión externo guardado
+// en el session_ref. Antes se enviaba vacío y Claude Code fallaba al instante
+// con "--resume requires a valid session ID", en 0 vueltas y $0.
+func TestRetomarPasaLaSesionExterna(t *testing.T) {
+	db, _, repo, o, _ := montar(t, "trabaja", "cambios_aislados")
+
+	refID, err := db.UpsertSessionRef("claude", "sesion-externa-xyz", repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, _ := db.UpsertProject(store.Project{
+		Name: "demo", WorkspacePath: repo, GitRoot: repo, DefaultBranch: "main"})
+	task, _, err := db.CreateTask(store.Task{
+		Name: "retomar", ProjectID: pid, Agent: "falso", Enabled: true,
+		ConversationMode: "resume", SessionRefID: sql.NullString{String: refID, Valid: true},
+		ScheduleRule: `{"type":"daily","time":"03:00"}`, Timezone: "Europe/Madrid",
+		MisfirePolicy: "skip", PermissionProfile: "cambios_aislados", TimeoutSeconds: 25,
+	}, "comprueba la conexión")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var capturada adapters.Peticion
+	d := Deps{
+		Adaptador: func(string) (adapters.Adaptador, error) {
+			return &agenteFalso{guion: "trabaja", captura: &capturada}, nil
+		},
+		Grupo: platform.NuevoGrupo,
+	}
+	if err := Ejecutar(context.Background(), db, d, o, task.ID, time.Now().UTC()); err != nil {
+		t.Fatalf("Ejecutar: %v", err)
+	}
+	if capturada.Modo != adapters.ModoRetomar {
+		t.Fatalf("Modo = %q, se esperaba resume", capturada.Modo)
+	}
+	if capturada.SesionExterna != "sesion-externa-xyz" {
+		t.Fatalf("SesionExterna = %q, se esperaba el id del session_ref (regresión: --resume iba vacío)", capturada.SesionExterna)
+	}
+}
+
+// Y si la tarea dice retomar pero no tiene referencia de sesión, debe fallar con
+// un mensaje claro, no arrancar el agente con un id vacío.
+func TestRetomarSinReferenciaFallaClaro(t *testing.T) {
+	db, _, repo, o, _ := montar(t, "trabaja", "cambios_aislados")
+	pid, _ := db.UpsertProject(store.Project{
+		Name: "demo", WorkspacePath: repo, GitRoot: repo, DefaultBranch: "main"})
+	task, _, err := db.CreateTask(store.Task{
+		Name: "retomar-sin-ref", ProjectID: pid, Agent: "falso", Enabled: true,
+		ConversationMode: "resume", // sin SessionRefID
+		ScheduleRule:     `{"type":"daily","time":"03:00"}`, Timezone: "Europe/Madrid",
+		MisfirePolicy: "skip", PermissionProfile: "cambios_aislados", TimeoutSeconds: 25,
+	}, "comprueba")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	d := Deps{
+		Adaptador: func(string) (adapters.Adaptador, error) { return &agenteFalso{guion: "trabaja"}, nil },
+		Grupo:     platform.NuevoGrupo,
+	}
+	if err := Ejecutar(context.Background(), db, d, o, task.ID, time.Now().UTC()); err != nil {
+		t.Fatalf("Ejecutar: %v", err)
+	}
+	// La ejecución debe quedar fallida con un mensaje sobre la referencia de
+	// sesión, no llegar a revisión con el agente arrancado en vacío.
+	var estado, cod string
+	if err := db.QueryRow(
+		`SELECT status, COALESCE(error_code,'') FROM runs WHERE task_id=? ORDER BY rowid DESC LIMIT 1`,
+		task.ID).Scan(&estado, &cod); err != nil {
+		t.Fatalf("leyendo el run: %v", err)
+	}
+	if estado != string(store.StateFailed) {
+		t.Fatalf("estado = %s, se esperaba failed", estado)
+	}
+	if cod != "sin_referencia_sesion" {
+		t.Fatalf("error_code = %q, se esperaba sin_referencia_sesion", cod)
+	}
 }
