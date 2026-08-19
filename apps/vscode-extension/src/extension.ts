@@ -9,6 +9,7 @@ import { BASE_SCHEME, BaseContentProvider, RUN_SCHEME, RunDetailsProvider, openF
 import { FileItem, HistoryProvider, InboxProvider, RunItem, TaskItem, TasksProvider, stateLabel } from './ui/trees';
 import { runNewTaskWizard } from './ui/wizard';
 import { openTaskPanel } from './ui/taskPanel';
+import { openRunView, refreshOpenRunView } from './ui/runView';
 
 const t = vscode.l10n.t;
 
@@ -64,7 +65,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     try {
       const env = await ctl.environment();
       log(`data dir ${env.raiz}`);
-      context.subscriptions.push({ dispose: watchMarker(env.marca, () => onMarker(inbox, refreshAll)) });
+      context.subscriptions.push({ dispose: watchMarker(env.marca, () => {
+        onMarker(inbox, refreshAll);
+        if (ctl) refreshOpenRunView(ctl);
+      }) });
       if (env.aviso_reactivacion) log(`wake: ${env.aviso_reactivacion}`);
     } catch (e) {
       log(`environment: ${(e as Error).message}`);
@@ -233,11 +237,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     setTimeout(refreshAll, 3500);
   });
 
-  reg('taskkeeper.openDiff', async (item?: RunItem) => {
+  reg('taskkeeper.openDiff', async (item?: RunItem | string) => {
     const c = need();
-    const run = item?.run ?? (await pickRun(inbox.runs, 'any'));
-    if (!run) return;
-    await openRunDiff(await c.run(run.id));
+    let id = typeof item === 'string' ? item : item?.run?.id;
+    if (!id) id = (await pickRun(inbox.runs, 'any'))?.id;
+    if (!id) return;
+    await openRunDiff(await c.run(id));
   });
   reg('taskkeeper.openFileDiff', async (a?: string | FileItem, file?: string) => {
     const c = need();
@@ -247,6 +252,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await openFileDiff(await c.run(runId), f);
   });
   reg('taskkeeper.showRun', async (a?: string | RunItem) => {
+    const id = a instanceof RunItem ? a.run.id : a;
+    if (!id) return;
+    // The readable transcript (Webview) is the default result view; the raw
+    // Markdown timeline stays available as "TaskKeeper: Show run (raw)".
+    await openRunView(need(), id);
+  });
+
+  reg('taskkeeper.showRunRaw', async (a?: string | RunItem) => {
     const id = a instanceof RunItem ? a.run.id : a;
     if (!id) return;
     details.fire(id);

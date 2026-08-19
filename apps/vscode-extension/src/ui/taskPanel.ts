@@ -38,6 +38,7 @@ interface SubmitPayload {
   politica: string;
   presupuesto?: number;
   autocompact?: string;
+  workspace?: string; // 'isolated' | 'direct'
   runNow: boolean;
 }
 
@@ -121,6 +122,16 @@ export async function openTaskPanel(
         }
         case 'submit': {
           const p = msg.payload as SubmitPayload;
+          // «Cambios directos»: en el repo real, sin poder rechazar. Se confirma
+          // con un modal explícito antes de crear o editar.
+          if (p.workspace === 'direct' && p.perfil === 'cambios_aislados') {
+            const yes = t('Yes, write directly');
+            const ok = await vscode.window.showWarningMessage(
+              t('This task will make changes directly in your working copy, with no review step to reject them. Continue?'),
+              { modal: true }, yes,
+            );
+            if (ok !== yes) return;
+          }
           const params = toCreateParams(p);
           if (editing) {
             const res = await ctl.edit((existing as Task).id, params);
@@ -169,6 +180,7 @@ function toCreateParams(p: SubmitPayload): CreateParams {
     // el de la tarea, en vez de machacarlos con una constante.
     presupuesto: p.presupuesto,
     autocompact: p.autocompact,
+    workspace: p.workspace,
   };
 }
 
@@ -192,6 +204,7 @@ function taskToForm(task: Task): Record<string, unknown> {
     politica: task.politica ?? 'skip',
     presupuesto: task.presupuesto_usd ?? undefined,
     autocompact: task.autocompact ?? '',
+    workspace: task.workspace_mode ?? 'isolated',
   };
 }
 
@@ -224,6 +237,13 @@ function strings(): Record<string, string> {
     ctx_fork_d: t('Copies the context into a new conversation. Best for recurring work.'),
     which_conv: t('Which conversation?'),
     session_ph: t('Or paste a session id'),
+    workspace: t('Where it works'),
+    ws_isolated: t('Isolated'),
+    ws_isolated_d: t('Worktree from the base commit. You review before anything reaches your branch.'),
+    ws_direct: t('In the conversation'),
+    ws_direct_d: t('Runs in the real repository and adds its turns to the conversation. No review step.'),
+    ws_direct_changes: t('Direct changes'),
+    ws_direct_warn: t('Writes directly in your working copy, without a review step.'),
     prompt: t('Instruction (prompt)'),
     schedule: t('Schedule'),
     every_day: t('Every day'),
@@ -350,7 +370,7 @@ const el = (tag,props={},...kids)=>{const e=document.createElement(tag);Object.a
 let INIT=null, state={
   proyecto:'',proyectoNombre:'',isGit:true,nombre:'',agente:'',prompt:'',
   regla:'daily',horas:['03:00'],dias:[1],zona:'',perfil:'cambios_aislados',
-  modo:'new',sesion:'',politica:'skip',presupuesto:'',autocompact:'',editing:false
+  modo:'new',sesion:'',politica:'skip',presupuesto:'',autocompact:'',workspace:'isolated',editing:false
 };
 let previewTimer=null;
 
@@ -438,6 +458,23 @@ function render(){
   }
   main.append(field(S.context, wrapErr('sesion', ctxWrap)));
   if(state.modo!=='new') requestSessions();
+
+  // Dónde trabaja: aislada (worktree + revisión) o directa (en la conversación).
+  const wsWrap=el('div',{});
+  const wsSeg=el('div',{className:'seg'});
+  const directoCambios = ()=> state.workspace==='direct' && state.perfil==='cambios_aislados';
+  [['isolated',S.ws_isolated,S.ws_isolated_d],['direct',S.ws_direct,S.ws_direct_d]].forEach(([w,lbl,d])=>{
+    const b=el('button',{},lbl); if(state.workspace===w)b.classList.add('on');
+    b.addEventListener('click',()=>{ state.workspace=w; render(); updateSummary(); });
+    wsSeg.append(b);
+  });
+  wsWrap.append(wsSeg);
+  const wsDesc=el('div',{style:'font-size:11.5px;color:var(--vscode-descriptionForeground);margin-top:6px'}, state.workspace==='direct'?S.ws_direct_d:S.ws_isolated_d);
+  wsWrap.append(wsDesc);
+  if(directoCambios()){
+    wsWrap.append(el('div',{style:'margin-top:7px;font-size:12px;font-weight:600;color:var(--vscode-inputValidation-errorForeground,#f48771)'}, '⚠ '+S.ws_direct_changes+' — '+S.ws_direct_warn));
+  }
+  main.append(field(S.workspace, wsWrap));
 
   // Prompt
   const ta=el('textarea',{value:state.prompt}); ta.addEventListener('input',()=>{state.prompt=ta.value;});
@@ -591,7 +628,8 @@ function submit(runNow){
     perfil:state.perfil,modo:state.modo,sesion:state.modo==='new'?undefined:state.sesion.trim(),
     // autocompact SÍ se manda vacío (no undefined) para Claude, de modo que
     // elegir "Por defecto" al editar limpie un valor anterior.
-    politica:state.politica,presupuesto,autocompact:state.agente==='claude'?state.autocompact:undefined,runNow
+    politica:state.politica,presupuesto,autocompact:state.agente==='claude'?state.autocompact:undefined,
+    workspace:state.workspace,runNow
   }});
 }
 `;

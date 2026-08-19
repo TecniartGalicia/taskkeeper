@@ -61,10 +61,10 @@ func (db *DB) UpdateTask(t Task, prompt string) error {
 	now := Now()
 	if _, err := tx.Exec(`UPDATE tasks SET name=?, agent=?, conversation_mode=?, session_ref_id=?,
 		schedule_rule=?, timezone=?, misfire_policy=?, max_lateness_seconds=?, permission_profile=?,
-		timeout_seconds=?, max_budget_usd=?, daily_budget_usd=?, autocompact=?, updated_at=? WHERE id=?`,
+		timeout_seconds=?, max_budget_usd=?, daily_budget_usd=?, autocompact=?, workspace_mode=?, updated_at=? WHERE id=?`,
 		t.Name, t.Agent, t.ConversationMode, t.SessionRefID, t.ScheduleRule, t.Timezone,
 		t.MisfirePolicy, maxOr(t.MaxLatenessSeconds, 7200), t.PermissionProfile, t.TimeoutSeconds,
-		t.MaxBudgetUSD, t.DailyBudgetUSD, t.Autocompact, now, t.ID); err != nil {
+		t.MaxBudgetUSD, t.DailyBudgetUSD, t.Autocompact, defaultStr(t.WorkspaceMode, "isolated"), now, t.ID); err != nil {
 		return err
 	}
 	var actual string
@@ -242,4 +242,12 @@ func (db *DB) YaHayReintentoPorCuota(taskID string) bool {
 	db.QueryRow(`SELECT COUNT(*) FROM audit WHERE task_id=? AND action='quota_retry_scheduled'
 	             AND at > datetime('now','-1 day')`, taskID).Scan(&n)
 	return n > 0
+}
+
+// defaultStr devuelve d si v está vacío.
+func defaultStr(v, d string) string {
+	if v == "" {
+		return d
+	}
+	return v
 }

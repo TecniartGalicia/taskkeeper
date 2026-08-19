@@ -212,6 +212,11 @@
         "title": "%cmd.editTask%",
         "category": "TaskKeeper",
         "icon": "$(settings-gear)"
+      },
+      {
+        "command": "taskkeeper.showRunRaw",
+        "title": "%cmd.showRunRaw%",
+        "category": "TaskKeeper"
       }
     ],
     "menus": {
@@ -352,6 +357,9 @@
         },
         {
           "command": "taskkeeper.editTask"
+        },
+        {
+          "command": "taskkeeper.showRunRaw"
         }
       ]
     },

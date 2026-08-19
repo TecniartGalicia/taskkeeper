@@ -10,6 +10,7 @@ export type RunState =
   | 'awaiting_review'
   | 'accepted'
   | 'rejected'
+  | 'completed'
   | 'skipped'
   | 'failed'
   | 'failed_verification'
@@ -27,6 +28,7 @@ export interface Task {
   modo: 'new' | 'resume' | 'fork' | string;
   sesion_externa?: string;
   autocompact?: string;
+  workspace_mode?: string;
   regla: string; // JSON of the scheduler rule
   zona: string;
   perfil: 'auditoria' | 'cambios_aislados' | string;
@@ -102,7 +104,7 @@ export interface ScheduleRule {
 
 export const ACTIVE_STATES: ReadonlySet<string> = new Set(['queued', 'preflight', 'running', 'verifying']);
 export const REVIEW_STATE = 'awaiting_review';
-export const DONE_STATES: ReadonlySet<string> = new Set(['accepted', 'rejected']);
+export const DONE_STATES: ReadonlySet<string> = new Set(['accepted', 'rejected', 'completed']);
 export const FAILED_STATES: ReadonlySet<string> = new Set([
   'failed',
   'failed_verification',
@@ -142,6 +144,8 @@ export function stateIcon(s: string): { id: string; color?: string } {
       return { id: 'git-pull-request', color: 'charts.orange' };
     case 'accepted':
       return { id: 'check', color: 'charts.green' };
+    case 'completed':
+      return { id: 'pass-filled', color: 'charts.green' };
     case 'rejected':
       return { id: 'discard', color: 'descriptionForeground' };
     case 'skipped':

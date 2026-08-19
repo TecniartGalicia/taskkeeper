@@ -165,7 +165,7 @@ func uso() {
 
 type opcionesTarea struct {
 	proyecto, nombre, agente, prompt, regla, hora, dias, zona, perfil, rama string
-	modo, sesion, politica, autocompact                                     string
+	modo, sesion, politica, autocompact, workspace                          string
 	retrasoMax, timeout                                                     int
 	presupuesto, presupuestoDiario                                          float64
 }
@@ -216,6 +216,11 @@ func parsearOpciones(nombre string, args []string, base *store.Task, promptBase 
 		dAutocompact = base.Autocompact
 	}
 	fs.StringVar(&o.autocompact, "autocompact", dAutocompact, "ventana de autocompactación de Claude Code (auto | tokens); vacío = por defecto")
+	dWorkspace := "isolated"
+	if base != nil && base.WorkspaceMode != "" {
+		dWorkspace = base.WorkspaceMode
+	}
+	fs.StringVar(&o.workspace, "workspace", dWorkspace, "isolated (worktree + revisión) | direct (en el repo real, sin revisión)")
 	dRetraso, dTimeout, dPres, dPresDia := 7200, 3600, 0.0, 0.0
 	if base != nil {
 		dRetraso, dTimeout = base.MaxLatenessSeconds, base.TimeoutSeconds
@@ -245,6 +250,9 @@ func crear(out salida, db *store.DB, cfg config.Config, args []string) {
 	}
 	if (o.modo == "resume" || o.modo == "fork") && o.sesion == "" {
 		out.fallo(fmt.Errorf("el modo %s necesita --sesion", o.modo))
+	}
+	if o.workspace != "isolated" && o.workspace != "direct" {
+		out.fallo(fmt.Errorf("--workspace debe ser isolated o direct"))
 	}
 
 	ctx := context.Background()
@@ -287,6 +295,7 @@ func crear(out salida, db *store.DB, cfg config.Config, args []string) {
 		MaxBudgetUSD:   store.NullFloat(o.presupuesto),
 		DailyBudgetUSD: store.NullFloat(o.presupuestoDiario),
 		Autocompact:    o.autocompact,
+		WorkspaceMode:  o.workspace,
 	}, o.prompt)
 	if err != nil {
 		out.fallo(err)
@@ -346,6 +355,7 @@ func editar(out salida, db *store.DB, cfg config.Config, args []string) {
 	nueva.MaxBudgetUSD = store.NullFloat(o.presupuesto)
 	nueva.DailyBudgetUSD = store.NullFloat(o.presupuestoDiario)
 	nueva.Autocompact = o.autocompact
+	nueva.WorkspaceMode = o.workspace
 	if o.sesion != "" {
 		sid, err := db.UpsertSessionRef(o.agente, o.sesion, base.ProjectID)
 		if err != nil {
@@ -494,6 +504,7 @@ type tareaJSON struct {
 	Modo                 string   `json:"modo"`
 	SesionExterna        string   `json:"sesion_externa"`
 	Autocompact          string   `json:"autocompact"`
+	WorkspaceMode        string   `json:"workspace_mode"`
 	Regla                string   `json:"regla"`
 	Zona                 string   `json:"zona"`
 	Perfil               string   `json:"perfil"`
@@ -514,7 +525,8 @@ func aJSON(db *store.DB, t *store.Task) tareaJSON {
 		ID: t.ID, Nombre: t.Name, Agente: t.Agent, Activa: t.Enabled,
 		Modo: t.ConversationMode, Regla: t.ScheduleRule, Zona: t.Timezone,
 		Perfil: t.PermissionProfile, Politica: t.MisfirePolicy, Autocompact: t.Autocompact,
-		TimeoutSeg: t.TimeoutSeconds, RetrasoMaxSeg: t.MaxLatenessSeconds,
+		WorkspaceMode: defaultStr2(t.WorkspaceMode),
+		TimeoutSeg:    t.TimeoutSeconds, RetrasoMaxSeg: t.MaxLatenessSeconds,
 	}
 	if p, err := db.GetProject(t.ProjectID); err == nil {
 		j.Proyecto, j.RutaProyecto = p.Name, p.WorkspacePath
@@ -952,4 +964,12 @@ func politicaDe(t *store.Task) string {
 		return ""
 	}
 	return t.MisfirePolicy
+}
+
+// defaultStr2 normaliza el modo de workspace vacío a "isolated".
+func defaultStr2(v string) string {
+	if v == "" {
+		return "isolated"
+	}
+	return v
 }

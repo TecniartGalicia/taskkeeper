@@ -195,19 +195,27 @@ func Ejecutar(ctx context.Context, db *store.DB, d Deps, o Opciones,
 	}
 
 	// 4. Worktree desde el commit resuelto, no desde la rama.
-	rama, err := gitwt.NombreRama(task.Name, ocurrencia, run.ID[:6])
-	if err != nil {
-		db.Transition(run.ID, store.StateFailed, err.Error())
-		return nil
+	//
+	// Modo «en la conversación» (directo): no se crea worktree, el agente trabaja
+	// en el repo real y no hay paso de revisión. Todo lo demás (repo aislado) es
+	// el camino de siempre, intacto.
+	directo := task.WorkspaceMode == "direct"
+	var wt *gitwt.Worktree
+	if !directo {
+		rama, err := gitwt.NombreRama(task.Name, ocurrencia, run.ID[:6])
+		if err != nil {
+			db.Transition(run.ID, store.StateFailed, err.Error())
+			return nil
+		}
+		wt, err = gitwt.Crear(ctx, pf, o.DirWorktrees, rama)
+		if err != nil {
+			db.Transition(run.ID, store.StateFailed, err.Error())
+			return nil
+		}
+		db.SetRunField(run.ID, "worktree_path", wt.Path)
+		db.SetRunField(run.ID, "worktree_branch", wt.Branch)
+		db.SetRunField(run.ID, "base_commit", wt.Base)
 	}
-	wt, err := gitwt.Crear(ctx, pf, o.DirWorktrees, rama)
-	if err != nil {
-		db.Transition(run.ID, store.StateFailed, err.Error())
-		return nil
-	}
-	db.SetRunField(run.ID, "worktree_path", wt.Path)
-	db.SetRunField(run.ID, "worktree_branch", wt.Branch)
-	db.SetRunField(run.ID, "base_commit", wt.Base)
 
 	// 5. El agente, dentro de su grupo de procesos.
 	grupo, err := d.Grupo()
@@ -244,7 +252,7 @@ func Ejecutar(ctx context.Context, db *store.DB, d Deps, o Opciones,
 		SesionExterna:  sesionExterna,
 		NuevaSesionID:  uuidDe(run.ID),
 		DirTrabajo:     proj.WorkspacePath,
-		Worktree:       wt.Path,
+		Worktree:       rutaWorktree(wt),
 		Perfil:         adapters.Perfil(task.PermissionProfile),
 		MaxTurnos:      40,
 		MaxPresupuesto: nz(task.MaxBudgetUSD.Float64, task.MaxBudgetUSD.Valid),
@@ -254,7 +262,12 @@ func Ejecutar(ctx context.Context, db *store.DB, d Deps, o Opciones,
 		db.Transition(run.ID, store.StateFailed, err.Error())
 		return nil
 	}
-	if task.PermissionProfile == string(adapters.PerfilAislado) {
+	if directo {
+		// Directo: el agente corre en el repo real (para auditoría es de solo
+		// lectura; para cambios, escribe ahí mismo — decisión explícita del
+		// usuario, avisada en el panel).
+		cmd.Dir = proj.WorkspacePath
+	} else if task.PermissionProfile == string(adapters.PerfilAislado) {
 		cmd.Dir = wt.Path
 	}
 
@@ -283,6 +296,19 @@ func Ejecutar(ctx context.Context, db *store.DB, d Deps, o Opciones,
 	// 6. Cerrar según el desenlace.
 	switch des.Estado {
 	case string(store.StateVerifying):
+		if directo {
+			// «En la conversación»: no hay worktree ni diff que revisar; el trabajo
+			// ya está en tu repo y sus turnos en la conversación. Termina en
+			// `completed`, un estado final sin Aceptar/Rechazar.
+			resumen, _ := json.Marshal(map[string]any{"ficheros": nil, "modo": "en_conversacion"})
+			if des.CosteUSD != nil {
+				db.SetRunField(run.ID, "cost_usd", *des.CosteUSD)
+			}
+			db.SetRunField(run.ID, "summary", string(resumen))
+			db.SetRunField(run.ID, "stop_subtype", des.Subtipo)
+			db.Transition(run.ID, store.StateCompleted, "")
+			return nil
+		}
 		ficheros, diff, err := wt.Cambios(ctx)
 		if err != nil {
 			db.Transition(run.ID, store.StateFailed, err.Error())
@@ -466,3 +492,11 @@ func uuidDe(id string) string {
 }
 
 var ErrSinTarea = errors.New("tarea no encontrada")
+
+// rutaWorktree devuelve la ruta del worktree, o vacío si no hay (modo directo).
+func rutaWorktree(w *gitwt.Worktree) string {
+	if w == nil {
+		return ""
+	}
+	return w.Path
+}

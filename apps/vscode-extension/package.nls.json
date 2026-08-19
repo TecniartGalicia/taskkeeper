@@ -27,5 +27,6 @@
   "cfg.notifications": "Show a notification when a run finishes, fails or is waiting for your review.",
   "cmd.archive": "Archive (remove from inbox)",
   "cmd.newTaskQuick": "New task (quick, no panel)",
-  "cmd.editTask": "Edit task…"
+  "cmd.editTask": "Edit task…",
+  "cmd.showRunRaw": "Show run (raw timeline)"
 }

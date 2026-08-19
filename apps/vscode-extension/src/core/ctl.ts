@@ -170,6 +170,7 @@ export interface CreateParams {
   presupuesto?: number;
   presupuestoDiario?: number;
   autocompact?: string;
+  workspace?: string;
 }
 
 /** Builds the argument list; exported for the unit test. Never a shell string. */
@@ -199,5 +200,6 @@ export function createArgs(p: Partial<CreateParams>): string[] {
   // autocompact se envía aunque sea cadena vacía (para poder LIMPIARLO al
   // editar); solo se omite cuando el llamante no lo gestiona (undefined).
   if (p.autocompact !== undefined) a.push('--autocompact', p.autocompact);
+  put('--workspace', p.workspace);
   return a;
 }

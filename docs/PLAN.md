@@ -698,3 +698,72 @@ Fecha: 2026-08-19. Sustituir los 7 diálogos por un panel Webview, en fases, aud
 ### Estado tras ejecutar §24 (v0.2.0)
 
 F1-F4 hechas y auditadas. Revisión adversarial (2 pasadas): 7 hallazgos, todos en la ruta de edición del panel, corregidos y verificados por E2E (editar limpia presupuesto/autocompact y conserva timeout; presupuesto valida coma decimal; repo bloqueado al editar; panel único cierra-y-recrea). Go verde en 3 plataformas, extensión 19+4, cross-compila. Publicado como 0.2.0.
+
+## 25. Plan auditado — Vista de resultado: Webview (B) + resumen (C) (v0.3.0)
+
+Fecha: 2026-08-19. Problema: `RunDetailsProvider` (src/ui/diff.ts) genera Markdown cuya sección «Timeline» vuelca el `payload` crudo de cada evento (thinking_tokens, firmas base64, campos de cuota) → ilegible. Objetivo: transcripción legible tipo chat con cabecera de resumen.
+
+### Arquitectura (clave para auditar: la lógica es pura y testeable)
+- **`src/core/transcript.ts` (PURO, sin `vscode`)**: `buildTranscript(run: Run, events: RunEvent[]): TranscriptModel`.
+  - Parsea cada `payload` (JSON) por tipo y produce un modelo de items:
+    - `sesion_iniciada` → item `system` («iniciada en worktree X» o «en el repo real»).
+    - `assistant` → por bloque de `content`: `text`→item `say`; `tool_use`→item `tool` (nombre + comando/entrada, resumido); `thinking` con texto→item `thought` plegable (los vacíos se descartan).
+    - `user`/`tool_result` → se **empareja** con el `tool_use` anterior por `tool_use_id`; su salida va dentro del item `tool` (truncada, plegable).
+    - `result` → item `final` (respuesta + `total_cost_usd`, `num_turns`, `is_error`, subtype).
+    - Ruido descartado: `thinking_tokens`; `rate_limit_event` se reduce a una nota solo si `status!="allowed"`.
+  - No hace red ni E/S; la redacción de secretos ya la hizo el worker. Devuelve también el resumen (estado, coste, vueltas, duración, nº ficheros, sesión, decisión).
+- **`src/ui/runView.ts` (Webview)**: renderiza el `TranscriptModel`. CSP+nonce, tema por variables `--vscode-*` (como taskPanel). Cabecera de resumen (C) arriba: nombre, pastilla de estado, coste/vueltas/duración/ficheros; botones Aceptar/Rechazar/Archivar/Ver diff cuando aplican (reusan los comandos existentes). Cuerpo: la transcripción (mensajes como prosa, herramientas plegables, respuesta final destacada).
+- **Refresco en vivo**: al abrir, `ctl.events(runId)`; se re-pide y re-renderiza cuando el worker toca el marcador (la extensión ya observa `cambios.marca`), para runs en marcha.
+- **Cableado**: `taskkeeper.showRun` abre el Webview en vez de `markdown.showPreview`. El `RunDetailsProvider`/Markdown se conserva como export por si se quiere, pero deja de ser la vista por defecto.
+
+### Auditoría
+- **Unitarias de `buildTranscript`** con fixtures de eventos REALES (la ejecución `prueba2`: tailscale/ping): (1) empareja tool_use↔tool_result; (2) extrae el texto del asistente y la respuesta final; (3) descarta thinking_tokens y firmas; (4) run fallida → item final con error; (5) run con ficheros cambiados → resumen con nº. Sin `vscode`, corren en el runner de mocha.
+- **Generador de HTML**: nonce presente, CSP presente, sin `http` externo (como el test del panel si se añade).
+- **Integración**: `showRun` abre el Webview sin lanzar excepción.
+- **Real**: ejecutar una tarea, abrir el resultado, comprobar que se ven mensajes/herramientas/respuesta y el coste.
+- **l10n**: cadenas nuevas en ES+EN, `l10n-sync` a cero.
+
+### Riesgos / decisiones
+- Un `payload` no-JSON (línea suelta del agente) → item `log` de reserva, nunca rompe el parseo.
+- Coste de re-render en runs largos: se limita a los últimos N items visibles con «ver todo».
+- B no borra A: A (Markdown) queda disponible; B pasa a ser la vista principal.
+
+## 26. Plan auditado — Ejecutar «en la conversación», en el repo real (v0.3.0)
+
+Fecha: 2026-08-19. Hoy el runner SIEMPRE crea worktree (runner.go:203) y el resultado espera revisión. Objetivo: un segundo eje —**dónde trabaja**— con dos valores: `aislada` (actual) y `en_conversacion` (sin worktree, en el repo real, sin paso de revisión).
+
+### Modelo
+- Dos ejes independientes: **conversación** (new/resume/fork, ya existe) y **workspace** (`isolated` | `direct`). «Como si escribiera en la conversación» = `resume` + `direct`.
+- Store: columna `workspace_mode TEXT NOT NULL DEFAULT 'isolated'` vía `migrar()`. Campo en `store.Task`, en `aJSON`, en el modelo TS, en `CreateParams`/`createArgs` (`--workspace`), y opción en el panel.
+
+### Runner (packages/runner/runner.go)
+- Si `workspace_mode == 'direct'`:
+  - **No** llama a `gitwt.Crear`. `cmd.Dir` y `Peticion.DirTrabajo` = `proj.WorkspacePath` (el repo real). No se pasan `--worktree`/`--add-dir` de worktree.
+  - **Salta** verifying/diff/review: al terminar el agente, `running → completed` (estado terminal nuevo) o `failed`. No hay worktree que fundir ni Aceptar/Rechazar.
+  - `resume`/`fork` siguen funcionando: la conversación real se continúa (ya lo hace el adaptador), así que sus turnos quedan **dentro** de la conversación señalada.
+- Estado nuevo `StateCompleted` en la máquina de estados (`allowed`: `StateRunning → StateCompleted`); la bandeja/vistas lo tratan como terminal «hecho, ya está en tu repo». `GetRunDetalle`/inbox lo incluyen sin botón de aceptar.
+
+### Seguridad (lo esencial)
+- `direct` + `auditoria` (solo lectura): **inofensivo** (no escribe ficheros). Se permite sin fricción.
+- `direct` + `cambios_aislados`: contradicción → se convierte en **«cambios directos»**: escribe en tu checkout real (acceptEdits) SIN posibilidad de rechazar. `git push/merge/gh` siguen prohibidos por el perfil. Por eso:
+  - En el panel, **desactivado por defecto**, en rojo, con aviso al guardar y una confirmación modal explícita antes de crear/editar.
+  - Aviso si el checkout tiene cambios sin guardar (se mezclarían con los del agente).
+- La ranura de concurrencia (una a la vez) se sigue tomando.
+
+### Panel (src/ui/taskPanel.ts)
+- Interruptor **«Dónde trabaja: Aislada / En la conversación»** justo bajo «Conversación». Por defecto Aislada.
+- Si `en_conversacion` + `cambios_aislados` → etiqueta pasa a «cambios directos» en rojo + confirmación al enviar.
+- Resumen lateral refleja el modo.
+
+### Auditoría
+- **Store**: test de que `migrar()` añade `workspace_mode` en bases nuevas y viejas; round-trip crear/leer.
+- **Runner** (`//go:build windows || darwin`, agente falso): (1) `direct` NO crea worktree y `cmd.Dir` = repo real; (2) termina en `completed`, sin worktree en disco; (3) `isolated` sigue creando worktree y acabando en `awaiting_review` (no-regresión).
+- **ctl**: `--workspace` round-trip; `previsualizar` no se ve afectado.
+- **Estados**: test de que `StateRunning → StateCompleted` es válida y `completed` es terminal.
+- **Real E2E**: crear tarea `direct` + `resume` + solo lectura, ejecutar, comprobar que NO hay carpeta de worktree, que la conversación real recibió los turnos, y que la run acabó `completed` sin diff.
+- **Seguridad**: test/manual de que el panel exige confirmación en «cambios directos».
+
+### Riesgos / decisiones
+- `direct` quita la red de revisión: es una elección explícita del usuario, marcada y confirmada. Por defecto todo sigue aislado.
+- No se toca el flujo aislado: es una rama nueva en el runner, no un cambio del camino existente (menos riesgo de regresión).
+- `completed` evita reutilizar `accepted` (que implica «fundido desde un worktree», aquí no aplica).

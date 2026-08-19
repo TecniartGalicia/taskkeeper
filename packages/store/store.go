@@ -77,6 +77,7 @@ func (db *DB) migrar() error {
 	nuevas := map[string]string{
 		"max_lateness_seconds": "INTEGER NOT NULL DEFAULT 7200",
 		"autocompact":          "TEXT NOT NULL DEFAULT ''",
+		"workspace_mode":       "TEXT NOT NULL DEFAULT 'isolated'",
 	}
 	filas, err := db.Query(`PRAGMA table_info(tasks)`)
 	if err != nil {
@@ -207,6 +208,9 @@ type Task struct {
 	// (--autocompact <auto|tokens>). Vacío = no pasar el flag (comportamiento
 	// por defecto del agente, que ya compacta solo al acercarse al límite).
 	Autocompact string
+	// WorkspaceMode: "isolated" (worktree + revisión, por defecto) o "direct"
+	// (sin worktree, en el repo real, sin revisión — «en la conversación»).
+	WorkspaceMode string
 }
 
 type Revision struct {
@@ -231,12 +235,12 @@ func (db *DB) CreateTask(t Task, prompt string) (*Task, *Revision, error) {
 	if _, err := tx.Exec(`INSERT INTO tasks
 		(id,name,project_id,agent,enabled,conversation_mode,session_ref_id,schedule_rule,
 		 timezone,next_run_at_utc,misfire_policy,max_lateness_seconds,permission_profile,
-		 timeout_seconds,max_budget_usd,daily_budget_usd,os_trigger_id,autocompact,created_at,updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		 timeout_seconds,max_budget_usd,daily_budget_usd,os_trigger_id,autocompact,workspace_mode,created_at,updated_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Name, t.ProjectID, t.Agent, boolToInt(t.Enabled), t.ConversationMode,
 		t.SessionRefID, t.ScheduleRule, t.Timezone, t.NextRunAtUTC, t.MisfirePolicy,
 		maxOr(t.MaxLatenessSeconds, 7200), t.PermissionProfile, t.TimeoutSeconds,
-		t.MaxBudgetUSD, t.DailyBudgetUSD, t.OSTriggerID, t.Autocompact, now, now); err != nil {
+		t.MaxBudgetUSD, t.DailyBudgetUSD, t.OSTriggerID, t.Autocompact, defaultStr(t.WorkspaceMode, "isolated"), now, now); err != nil {
 		return nil, nil, err
 	}
 
@@ -262,11 +266,11 @@ func (db *DB) GetTask(id string) (*Task, error) {
 	var enabled int
 	err := db.QueryRow(`SELECT id,name,project_id,agent,enabled,conversation_mode,session_ref_id,
 		schedule_rule,timezone,next_run_at_utc,misfire_policy,max_lateness_seconds,
-		permission_profile,timeout_seconds,max_budget_usd,daily_budget_usd,os_trigger_id,autocompact
+		permission_profile,timeout_seconds,max_budget_usd,daily_budget_usd,os_trigger_id,autocompact,workspace_mode
 		FROM tasks WHERE id=?`, id).
 		Scan(&t.ID, &t.Name, &t.ProjectID, &t.Agent, &enabled, &t.ConversationMode, &t.SessionRefID,
 			&t.ScheduleRule, &t.Timezone, &t.NextRunAtUTC, &t.MisfirePolicy, &t.MaxLatenessSeconds,
-			&t.PermissionProfile, &t.TimeoutSeconds, &t.MaxBudgetUSD, &t.DailyBudgetUSD, &t.OSTriggerID, &t.Autocompact)
+			&t.PermissionProfile, &t.TimeoutSeconds, &t.MaxBudgetUSD, &t.DailyBudgetUSD, &t.OSTriggerID, &t.Autocompact, &t.WorkspaceMode)
 	if err != nil {
 		return nil, err
 	}
@@ -346,12 +350,15 @@ const (
 	StateAwaitingReview State = "awaiting_review"
 	StateAccepted       State = "accepted"
 	StateRejected       State = "rejected"
-	StateSkipped        State = "skipped"
-	StateFailed         State = "failed"
-	StateFailedVerif    State = "failed_verification"
-	StateFailedQuota    State = "failed_quota"
-	StateFailedAuth     State = "failed_auth"
-	StateCancelled      State = "cancelled"
+	// StateCompleted: la ejecución «en la conversación» (sin worktree) terminó;
+	// no hay nada que aceptar ni rechazar porque el trabajo ya está en el repo.
+	StateCompleted   State = "completed"
+	StateSkipped     State = "skipped"
+	StateFailed      State = "failed"
+	StateFailedVerif State = "failed_verification"
+	StateFailedQuota State = "failed_quota"
+	StateFailedAuth  State = "failed_auth"
+	StateCancelled   State = "cancelled"
 )
 
 type Run struct {
@@ -397,7 +404,7 @@ var allowed = map[State][]State{
 	StateScheduled:      {StateQueued, StateSkipped, StateCancelled},
 	StateQueued:         {StatePreflight, StateSkipped, StateCancelled, StateFailed},
 	StatePreflight:      {StateRunning, StateFailed, StateFailedAuth, StateSkipped, StateCancelled},
-	StateRunning:        {StateVerifying, StateFailed, StateFailedQuota, StateFailedAuth, StateCancelled},
+	StateRunning:        {StateVerifying, StateCompleted, StateFailed, StateFailedQuota, StateFailedAuth, StateCancelled},
 	StateVerifying:      {StateAwaitingReview, StateFailedVerif, StateCancelled},
 	StateAwaitingReview: {StateAccepted, StateRejected},
 }
@@ -425,7 +432,7 @@ func (db *DB) Transition(runID string, to State, detail string) error {
 	case StateRunning:
 		q = `UPDATE runs SET status=?, started_at=? WHERE id=?`
 		args = []any{string(to), Now(), runID}
-	case StateAwaitingReview, StateFailed, StateFailedAuth, StateFailedQuota,
+	case StateAwaitingReview, StateCompleted, StateFailed, StateFailedAuth, StateFailedQuota,
 		StateFailedVerif, StateCancelled, StateSkipped:
 		q = `UPDATE runs SET status=?, finished_at=? WHERE id=?`
 		args = []any{string(to), Now(), runID}

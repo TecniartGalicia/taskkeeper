@@ -396,3 +396,43 @@ func TestRetomarSinReferenciaFallaClaro(t *testing.T) {
 		t.Fatalf("error_code = %q, se esperaba sin_referencia_sesion", cod)
 	}
 }
+
+// §26: modo «en la conversación» (direct): sin worktree, en el repo real, y la
+// ejecución acaba en `completed` (sin Aceptar/Rechazar).
+func TestDirectoSinWorktreeAcabaCompleted(t *testing.T) {
+	db, _, repo, o, _ := montar(t, "trabaja", "auditoria")
+	pid, _ := db.UpsertProject(store.Project{Name: "demo", WorkspacePath: repo, GitRoot: repo, DefaultBranch: "main"})
+	task, _, err := db.CreateTask(store.Task{
+		Name: "directo", ProjectID: pid, Agent: "falso", Enabled: true,
+		ConversationMode: "new", WorkspaceMode: "direct",
+		ScheduleRule: `{"type":"daily","time":"03:00"}`, Timezone: "Europe/Madrid",
+		MisfirePolicy: "skip", PermissionProfile: "auditoria", TimeoutSeconds: 25,
+	}, "comprueba")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cap adapters.Peticion
+	d := Deps{
+		Adaptador: func(string) (adapters.Adaptador, error) { return &agenteFalso{guion: "trabaja", captura: &cap}, nil },
+		Grupo:     platform.NuevoGrupo,
+	}
+	if err := Ejecutar(context.Background(), db, d, o, task.ID, time.Now().UTC()); err != nil {
+		t.Fatalf("Ejecutar: %v", err)
+	}
+	// No se pasó worktree al agente.
+	if cap.Worktree != "" {
+		t.Errorf("en modo directo no debe haber worktree, hubo %q", cap.Worktree)
+	}
+	// La carpeta de worktrees no debe existir (no se creó ninguno).
+	if entries, _ := os.ReadDir(o.DirWorktrees); len(entries) != 0 {
+		t.Errorf("se creó un worktree en modo directo: %v", entries)
+	}
+	// Estado final: completed.
+	var estado string
+	if err := db.QueryRow(`SELECT status FROM runs WHERE task_id=? ORDER BY rowid DESC LIMIT 1`, task.ID).Scan(&estado); err != nil {
+		t.Fatal(err)
+	}
+	if estado != string(store.StateCompleted) {
+		t.Fatalf("estado = %s, se esperaba completed", estado)
+	}
+}
