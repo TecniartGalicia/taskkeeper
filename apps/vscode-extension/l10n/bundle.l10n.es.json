@@ -231,5 +231,7 @@
   "Could not open the conversation in Claude Code. Open it in a terminal instead?": "No se pudo abrir la conversación en Claude Code. ¿La abro en una terminal?",
   "Open in terminal": "Abrir en terminal",
   "Open in the conversation": "Abrir en la conversación",
-  "This conversation could not be opened.": "No se pudo abrir esta conversación."
+  "This conversation could not be opened.": "No se pudo abrir esta conversación.",
+  "Open that folder": "Abrir esa carpeta",
+  "This conversation lives in {0}. Open that folder in VS Code to see it in the Claude Code chat.": "Esta conversación vive en {0}. Abre esa carpeta en VS Code para verla en el chat de Claude Code."
 }

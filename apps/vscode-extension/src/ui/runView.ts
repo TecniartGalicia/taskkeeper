@@ -51,7 +51,10 @@ export async function openRunView(ctl: Ctl, runId: string): Promise<void> {
           await vscode.commands.executeCommand('taskkeeper.openDiff', runId);
           break;
         case 'openConversation':
-          await openInClaudeConversation(String((msg as { session?: unknown }).session ?? ''));
+          await openInClaudeConversation(
+            String((msg as { session?: unknown }).session ?? ''),
+            String((msg as { cwd?: unknown }).cwd ?? ''),
+          );
           break;
       }
     } catch (e) {
@@ -63,6 +66,13 @@ export async function openRunView(ctl: Ctl, runId: string): Promise<void> {
 /** Called by the marker watcher so an open result view updates live. */
 export function refreshOpenRunView(ctl: Ctl): void {
   if (current) void push(ctl, current.panel, current.runId);
+}
+
+/** True if `cwd` is one of the currently open workspace folders (case/sep-insensitive). */
+function enElWorkspace(cwd: string): boolean {
+  const norm = (p: string) => p.replace(/[\\/]+$/, '').toLowerCase();
+  const target = norm(cwd);
+  return (vscode.workspace.workspaceFolders ?? []).some((f) => norm(f.uri.fsPath) === target);
 }
 
 /**
@@ -77,8 +87,22 @@ export function refreshOpenRunView(ctl: Ctl): void {
  * scheme openExternal resolves true even when nothing handles it, so it cannot
  * tell success from silent failure.
  */
-async function openInClaudeConversation(session: string): Promise<void> {
+async function openInClaudeConversation(session: string, cwd?: string): Promise<void> {
   if (!session) return;
+  // Claude Code muestra una conversación solo si su carpeta es el workspace
+  // abierto (si no, abre un chat vacío). Si la carpeta de la ejecución no está
+  // abierta, se ofrece abrirla en vez de dejar una ventana vacía.
+  if (cwd && !enElWorkspace(cwd)) {
+    const abrir = t('Open that folder');
+    const answer = await vscode.window.showWarningMessage(
+      t('This conversation lives in {0}. Open that folder in VS Code to see it in the Claude Code chat.', cwd),
+      abrir,
+    );
+    if (answer === abrir) {
+      await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(cwd), { forceNewWindow: false });
+    }
+    return;
+  }
   // Vía preferida: el comando de Claude Code. El argumento NO pasa por un shell,
   // así que cualquier id vale aquí. Si el comando falla (id que su almacén ya no
   // tiene, versión distinta), se cae a la terminal.
@@ -143,6 +167,7 @@ function strings(): Record<string, string> {
     diff: t('Open diff'),
     refresh: t('Refresh'),
     open_conv: t('Open in the conversation'),
+    open_folder: t('Open that folder'),
     files: t('files changed'),
     turns: t('turns'),
     session: t('conversation'),
@@ -256,6 +281,7 @@ function render(m){
   if(sm.files>0) meta.append(el('span',{className:'num'},sm.files+' '+STR.files));
   if(sm.isolated===true) meta.append(el('span',{},STR.isolated));
   else if(sm.isolated===false) meta.append(el('span',{},STR.direct));
+  if(sm.cwd) meta.append(el('span',{title:sm.cwd,style:'font-family:var(--vscode-editor-font-family,monospace)'},sm.cwd));
   if(sm.errorCode) meta.append(el('span',{},'· '+sm.errorCode));
   head.append(meta);
 
@@ -264,7 +290,7 @@ function render(m){
   // principal es saltar a esa conversación en el chat de Claude Code.
   if(sm.isolated===false && sm.session){
     const oc=el('button',{className:'btn primary'},STR.open_conv);
-    oc.addEventListener('click',()=>vscode.postMessage({type:'openConversation',session:sm.session}));
+    oc.addEventListener('click',()=>vscode.postMessage({type:'openConversation',session:sm.session,cwd:sm.cwd}));
     actions.append(oc);
   }
   if(sm.state==='awaiting_review'){

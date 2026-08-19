@@ -26,6 +26,7 @@ export interface TranscriptSummary {
   files: number;
   errorCode?: string;
   session?: string;
+  cwd?: string; // the folder the run worked in (where its conversation lives)
   decision?: string;
   isolated?: boolean; // ran in a worktree (true) or directly in the repo (false)
 }
@@ -130,6 +131,7 @@ export function buildTranscript(run: Run, events: RunEvent[]): Transcript {
     files: run.ficheros?.length ?? 0,
     errorCode: run.codigo_error || undefined,
     session: run.sesion_proveedor || undefined,
+    cwd: run.ruta_proyecto || undefined,
     decision: run.decision || undefined,
     // Per-run: un worktree registrado significa que ESA ejecución fue aislada,
     // aunque la tarea se edite luego (el worktree manda). Sin worktree, el modo
