@@ -171,7 +171,6 @@
   "Runs in its own worktree. Nothing reaches your branch until you accept.": "Se ejecuta en su propio worktree. Nada llega a tu rama hasta que aceptes.",
   "If the scheduled time is missed": "Si se pierde la hora prevista",
   "Skip": "Saltar",
-  "Run if < 2h late": "Ejecutar si <2 h tarde",
   "Wait for me": "Esperarme",
   "no cap": "sin tope",
   "Save changes": "Guardar cambios",
@@ -191,5 +190,7 @@
   "Default (Claude Code decides)": "Por defecto (lo decide Claude Code)",
   "Automatic": "Automático",
   "Claude Code already compacts on its own near the limit; set a window only if you want a predictable threshold.": "Claude Code ya compacta solo al acercarse al límite; fija una ventana solo si quieres un umbral predecible.",
-  "Fixed for an existing task": "Fijo para una tarea existente"
+  "Fixed for an existing task": "Fijo para una tarea existente",
+  "Run if a little late": "Ejecutar si va con algo de retraso",
+  "A number like 2.00, or empty for no cap": "Un número como 2.00, o vacío para sin tope"
 }

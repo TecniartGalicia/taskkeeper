@@ -241,10 +241,11 @@ function strings(): Record<string, string> {
     perm_iso_d: t('Runs in its own worktree. Nothing reaches your branch until you accept.'),
     misfire: t('If the scheduled time is missed'),
     mis_skip: t('Skip'),
-    mis_late: t('Run if < 2h late'),
+    mis_late: t('Run if a little late'),
     mis_wait: t('Wait for me'),
     cap: t('Spending cap per run (USD)'),
     no_cap: t('no cap'),
+    err_budget: t('A number like 2.00, or empty for no cap'),
     autocompact: t('Compact long conversation'),
     ac_default: t('Default (Claude Code decides)'),
     ac_auto: t('Automatic'),
@@ -491,10 +492,10 @@ function render(){
   const mseg=el('div',{className:'seg'});
   [['skip',S.mis_skip],['run_if_late',S.mis_late],['manual',S.mis_wait]].forEach(([p,lbl])=>{ const b=el('button',{},lbl); if(state.politica===p)b.classList.add('on'); b.addEventListener('click',()=>{ state.politica=p; render(); }); mseg.append(b); });
   const money=el('span',{className:'money'}, '$');
-  const bin=el('input',{type:'text',className:'time-in',value:state.presupuesto,placeholder:'2.00'}); bin.addEventListener('input',()=>{ state.presupuesto=bin.value; });
+  const bin=el('input',{type:'text',className:'time-in',value:state.presupuesto,placeholder:'2.00'}); bin.addEventListener('input',()=>{ state.presupuesto=bin.value; setErr('presupuesto',''); });
   money.append(bin);
   mrow.append(mseg, money);
-  main.append(field(S.misfire+' · '+S.cap, mrow));
+  main.append(field(S.misfire+' · '+S.cap, wrapErr('presupuesto', mrow)));
 
   // Autocompactación (solo Claude): controla la ventana de --autocompact.
   if(state.agente==='claude'){
@@ -574,8 +575,16 @@ function submit(runNow){
   if(state.modo!=='new'&&!state.sesion.trim()){ setErr('sesion',STR.err_session); bad=true; }
   if(bad)return;
   // Presupuesto vacío = 0 = sin tope (NullFloat trata <=0 como null): así, al
-  // editar, borrar el campo SÍ quita un tope existente en vez de conservarlo.
-  const presupuesto = state.presupuesto.trim()===''?0:(Number(state.presupuesto)||0);
+  // editar, borrar el campo SÍ quita un tope existente. Se valida el formato
+  // (admitiendo coma decimal) en vez de convertir en 0 una entrada inválida, que
+  // borraría el tope sin avisar.
+  const presuTxt = state.presupuesto.trim().replace(',','.');
+  let presupuesto = 0;
+  if(presuTxt!==''){
+    if(!/^\d+(\.\d{1,2})?$/.test(presuTxt)){ setErr('presupuesto', STR.err_budget); bad=true; }
+    else presupuesto = Number(presuTxt);
+  }
+  if(bad)return;
   vscode.postMessage({type:'submit',payload:{
     proyecto:state.proyecto,nombre:state.nombre,agente:state.agente,prompt:state.prompt,
     regla:state.regla,horas,dias:state.regla==='weekly'?state.dias:undefined,zona:state.zona,
