@@ -50,10 +50,12 @@ export async function openTaskPanel(
   existing?: Task,
 ): Promise<void> {
   const editing = !!existing;
-  // A single panel at a time: reveal the existing one instead of stacking.
+  // A single panel at a time. A previous panel is disposed and replaced rather
+  // than revealed: revealing would show stale content (e.g. the New-task form
+  // when the user asked to edit a specific task), silently dropping the request.
   if (current) {
-    current.reveal(vscode.ViewColumn.Active);
-    return;
+    current.dispose();
+    current = undefined;
   }
   const panel = vscode.window.createWebviewPanel(
     'taskkeeper.taskPanel',
@@ -162,8 +164,9 @@ function toCreateParams(p: SubmitPayload): CreateParams {
     modo: p.modo,
     sesion: p.sesion,
     politica: p.politica,
-    retrasoMax: 7200,
-    timeout: 3600,
+    // timeout y retraso-max no se tocan aquí: el panel no los expone, así que se
+    // dejan fuera para que `crear` use su valor por defecto y `editar` conserve
+    // el de la tarea, en vez de machacarlos con una constante.
     presupuesto: p.presupuesto,
     autocompact: p.autocompact,
   };
@@ -209,6 +212,7 @@ function strings(): Record<string, string> {
     repo: t('Repository'),
     browse: t('Browse…'),
     not_git: t('Not a Git repository'),
+    repo_locked: t('Fixed for an existing task'),
     agent: t('Agent'),
     signed_in: t('signed in'),
     context: t('Conversation'),
@@ -394,11 +398,17 @@ function render(){
   const repoRow=el('div',{className:'row'});
   const repoChip=el('span',{className:'chip'}, state.proyectoNombre||'—');
   if(state.proyectoNombre && !state.isGit) repoChip.append(el('span',{className:'req'},' · '+S.not_git));
-  const sel=el('select');
-  (INIT.folders||[]).forEach(f=>{ const o=el('option',{value:f.path},f.name); if(f.path===state.proyecto)o.selected=true; sel.append(o); });
-  if((INIT.folders||[]).length){ sel.addEventListener('change',()=>{ const f=INIT.folders.find(x=>x.path===sel.value); state.proyecto=f.path; state.proyectoNombre=f.name; state.isGit=true; render(); updateSummary(); }); repoRow.append(sel); }
-  const browse=el('button',{className:'btn ghost small'},S.browse); browse.addEventListener('click',()=>vscode.postMessage({type:'browseRepo'}));
-  repoRow.append(browse, repoChip);
+  if(state.editing){
+    // El repositorio de una tarea es fijo: editar no lo reasigna. Se muestra
+    // bloqueado en vez de ofrecer un cambio que se ignoraría en silencio.
+    repoRow.append(repoChip, el('span',{style:'font-size:11.5px;color:var(--vscode-descriptionForeground)'}, S.repo_locked));
+  } else {
+    const sel=el('select');
+    (INIT.folders||[]).forEach(f=>{ const o=el('option',{value:f.path},f.name); if(f.path===state.proyecto)o.selected=true; sel.append(o); });
+    if((INIT.folders||[]).length){ sel.addEventListener('change',()=>{ const f=INIT.folders.find(x=>x.path===sel.value); state.proyecto=f.path; state.proyectoNombre=f.name; state.isGit=true; render(); updateSummary(); }); repoRow.append(sel); }
+    const browse=el('button',{className:'btn ghost small'},S.browse); browse.addEventListener('click',()=>vscode.postMessage({type:'browseRepo'}));
+    repoRow.append(browse, repoChip);
+  }
   main.append(field(S.repo, wrapErr('proyecto', repoRow)));
 
   // Agent
@@ -563,12 +573,16 @@ function submit(runNow){
   if(!horas.length||!okTime){ setErr('horas',STR.err_time); bad=true; }
   if(state.modo!=='new'&&!state.sesion.trim()){ setErr('sesion',STR.err_session); bad=true; }
   if(bad)return;
-  const presupuesto = state.presupuesto.trim()===''?undefined:Number(state.presupuesto);
+  // Presupuesto vacío = 0 = sin tope (NullFloat trata <=0 como null): así, al
+  // editar, borrar el campo SÍ quita un tope existente en vez de conservarlo.
+  const presupuesto = state.presupuesto.trim()===''?0:(Number(state.presupuesto)||0);
   vscode.postMessage({type:'submit',payload:{
     proyecto:state.proyecto,nombre:state.nombre,agente:state.agente,prompt:state.prompt,
     regla:state.regla,horas,dias:state.regla==='weekly'?state.dias:undefined,zona:state.zona,
     perfil:state.perfil,modo:state.modo,sesion:state.modo==='new'?undefined:state.sesion.trim(),
-    politica:state.politica,presupuesto,autocompact:state.agente==='claude'?(state.autocompact||undefined):undefined,runNow
+    // autocompact SÍ se manda vacío (no undefined) para Claude, de modo que
+    // elegir "Por defecto" al editar limpie un valor anterior.
+    politica:state.politica,presupuesto,autocompact:state.agente==='claude'?state.autocompact:undefined,runNow
   }});
 }
 `;

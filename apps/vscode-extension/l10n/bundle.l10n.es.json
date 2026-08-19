@@ -190,5 +190,6 @@
   "Compact long conversation": "Compactar conversación larga",
   "Default (Claude Code decides)": "Por defecto (lo decide Claude Code)",
   "Automatic": "Automático",
-  "Claude Code already compacts on its own near the limit; set a window only if you want a predictable threshold.": "Claude Code ya compacta solo al acercarse al límite; fija una ventana solo si quieres un umbral predecible."
+  "Claude Code already compacts on its own near the limit; set a window only if you want a predictable threshold.": "Claude Code ya compacta solo al acercarse al límite; fija una ventana solo si quieres un umbral predecible.",
+  "Fixed for an existing task": "Fijo para una tarea existente"
 }

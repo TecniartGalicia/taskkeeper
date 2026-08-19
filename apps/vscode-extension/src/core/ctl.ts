@@ -196,6 +196,8 @@ export function createArgs(p: Partial<CreateParams>): string[] {
   put('--timeout', p.timeout);
   put('--presupuesto', p.presupuesto);
   put('--presupuesto-diario', p.presupuestoDiario);
-  put('--autocompact', p.autocompact);
+  // autocompact se envía aunque sea cadena vacía (para poder LIMPIARLO al
+  // editar); solo se omite cuando el llamante no lo gestiona (undefined).
+  if (p.autocompact !== undefined) a.push('--autocompact', p.autocompact);
   return a;
 }
