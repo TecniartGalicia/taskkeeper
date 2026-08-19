@@ -78,12 +78,24 @@ export function refreshOpenRunView(ctl: Ctl): void {
  * tell success from silent failure.
  */
 async function openInClaudeConversation(session: string): Promise<void> {
-  // El id va a un comando y (en la reserva) a una terminal: se valida su forma
-  // para que un valor inesperado con metacaracteres no se cuele en el shell.
-  if (!/^[A-Za-z0-9._-]{6,}$/.test(session)) return;
+  if (!session) return;
+  // Vía preferida: el comando de Claude Code. El argumento NO pasa por un shell,
+  // así que cualquier id vale aquí. Si el comando falla (id que su almacén ya no
+  // tiene, versión distinta), se cae a la terminal.
   const cmds = await vscode.commands.getCommands(true);
   if (cmds.includes('claude-vscode.primaryEditor.open')) {
-    await vscode.commands.executeCommand('claude-vscode.primaryEditor.open', session);
+    try {
+      await vscode.commands.executeCommand('claude-vscode.primaryEditor.open', session);
+      return;
+    } catch {
+      /* cae a la reserva por terminal */
+    }
+  }
+  // Reserva por terminal: AQUÍ el id sí se interpola en una orden de shell, así
+  // que se exige una forma estricta (empieza por alfanumérico, sin metacaracteres
+  // ni guion inicial que el CLI tomaría por una opción).
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{5,}$/.test(session)) {
+    vscode.window.showWarningMessage(t('This conversation could not be opened.'));
     return;
   }
   const answer = await vscode.window.showWarningMessage(

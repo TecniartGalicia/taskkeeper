@@ -4,6 +4,11 @@
 
 
 
+
+## 0.3.2 — 2026-08-19
+
+- **«Abrir en la conversación».** Cuando una tarea corre «en la conversación» (modo directo continuando una conversación), Claude Code escribe todo el intercambio en el fichero de esa conversación. La vista de resultado añade un botón **«Abrir en la conversación»** que salta al chat nativo de Claude Code, para verlo y seguirlo como una interacción normal. La transcripción de TaskKeeper se conserva para revisar.
+
 ## 0.3.1 — 2026-08-19
 
 - **«En la conversación» ya no exige un repositorio Git.** Para continuar una conversación en modo directo basta con elegir la carpeta donde vive (sigue haciendo falta para localizar la conversación y como directorio de trabajo del agente), pero ya no tiene que ser un repo Git ni tener una rama base. El modo aislado sigue exigiendo Git como debe, y cambiar una tarea a aislado sobre una carpeta sin Git se rechaza al editar, no al ejecutar.
