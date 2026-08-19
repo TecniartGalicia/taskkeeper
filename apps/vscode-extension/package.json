@@ -1,0 +1,207 @@
+{
+  "name": "taskkeeper",
+  "displayName": "TaskKeeper",
+  "description": "Run Claude Code and Codex on a schedule, isolated in a Git worktree, and review the diff in the morning before anything touches your branch. Local-first, no telemetry, free. Not affiliated with any agent vendor.",
+  "version": "0.1.0",
+  "publisher": "argalla",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "claude code",
+    "codex",
+    "ai agent",
+    "schedule",
+    "scheduler",
+    "cron",
+    "worktree",
+    "review",
+    "diff",
+    "unattended",
+    "overnight",
+    "automation"
+  ],
+  "pricing": "Free",
+  "preview": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TecniartGalicia/taskkeeper.git"
+  },
+  "bugs": {
+    "url": "https://github.com/TecniartGalicia/taskkeeper/issues"
+  },
+  "homepage": "https://github.com/TecniartGalicia/taskkeeper#readme",
+  "galleryBanner": {
+    "color": "#0F172A",
+    "theme": "dark"
+  },
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "%cap.untrusted%"
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "%cap.virtual%"
+    }
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "l10n": "./l10n",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "taskkeeper",
+          "title": "TaskKeeper",
+          "icon": "media/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "taskkeeper": [
+        {
+          "id": "taskkeeper.inbox",
+          "name": "%view.inbox%",
+          "icon": "media/activity.svg",
+          "contextualTitle": "TaskKeeper"
+        },
+        {
+          "id": "taskkeeper.tasks",
+          "name": "%view.tasks%",
+          "icon": "media/activity.svg",
+          "contextualTitle": "TaskKeeper"
+        },
+        {
+          "id": "taskkeeper.history",
+          "name": "%view.history%",
+          "icon": "media/activity.svg",
+          "contextualTitle": "TaskKeeper",
+          "visibility": "collapsed"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "taskkeeper.inbox",
+        "contents": "%welcome.inbox%"
+      },
+      {
+        "view": "taskkeeper.tasks",
+        "contents": "%welcome.tasks%"
+      }
+    ],
+    "commands": [
+      { "command": "taskkeeper.newTask", "title": "%cmd.newTask%", "category": "TaskKeeper", "icon": "$(add)" },
+      { "command": "taskkeeper.refresh", "title": "%cmd.refresh%", "category": "TaskKeeper", "icon": "$(refresh)" },
+      { "command": "taskkeeper.runNow", "title": "%cmd.runNow%", "category": "TaskKeeper", "icon": "$(play)" },
+      { "command": "taskkeeper.pauseTask", "title": "%cmd.pauseTask%", "category": "TaskKeeper", "icon": "$(debug-pause)" },
+      { "command": "taskkeeper.resumeTask", "title": "%cmd.resumeTask%", "category": "TaskKeeper", "icon": "$(debug-start)" },
+      { "command": "taskkeeper.editPrompt", "title": "%cmd.editPrompt%", "category": "TaskKeeper", "icon": "$(edit)" },
+      { "command": "taskkeeper.deleteTask", "title": "%cmd.deleteTask%", "category": "TaskKeeper", "icon": "$(trash)" },
+      { "command": "taskkeeper.accept", "title": "%cmd.accept%", "category": "TaskKeeper", "icon": "$(check)" },
+      { "command": "taskkeeper.reject", "title": "%cmd.reject%", "category": "TaskKeeper", "icon": "$(close)" },
+      { "command": "taskkeeper.cancel", "title": "%cmd.cancel%", "category": "TaskKeeper", "icon": "$(debug-stop)" },
+      { "command": "taskkeeper.openDiff", "title": "%cmd.openDiff%", "category": "TaskKeeper", "icon": "$(diff)" },
+      { "command": "taskkeeper.openFileDiff", "title": "%cmd.openFileDiff%", "category": "TaskKeeper" },
+      { "command": "taskkeeper.showRun", "title": "%cmd.showRun%", "category": "TaskKeeper", "icon": "$(info)" },
+      { "command": "taskkeeper.openWorktree", "title": "%cmd.openWorktree%", "category": "TaskKeeper", "icon": "$(folder-opened)" },
+      { "command": "taskkeeper.setConcurrency", "title": "%cmd.setConcurrency%", "category": "TaskKeeper" },
+      { "command": "taskkeeper.showEnvironment", "title": "%cmd.showEnvironment%", "category": "TaskKeeper" }
+    ],
+    "menus": {
+      "view/title": [
+        { "command": "taskkeeper.newTask", "when": "view == taskkeeper.tasks || view == taskkeeper.inbox", "group": "navigation@1" },
+        { "command": "taskkeeper.refresh", "when": "view =~ /^taskkeeper\\./", "group": "navigation@9" }
+      ],
+      "view/item/context": [
+        { "command": "taskkeeper.accept", "when": "view == taskkeeper.inbox && viewItem == run.review", "group": "inline@1" },
+        { "command": "taskkeeper.reject", "when": "view == taskkeeper.inbox && viewItem == run.review", "group": "inline@2" },
+        { "command": "taskkeeper.openDiff", "when": "view =~ /^taskkeeper\\./ && viewItem =~ /^run\\.(review|done)/", "group": "inline@3" },
+        { "command": "taskkeeper.cancel", "when": "view =~ /^taskkeeper\\./ && viewItem == run.active", "group": "inline@1" },
+        { "command": "taskkeeper.showRun", "when": "view =~ /^taskkeeper\\./ && viewItem =~ /^run\\./", "group": "navigation@1" },
+        { "command": "taskkeeper.openWorktree", "when": "view =~ /^taskkeeper\\./ && viewItem =~ /^run\\.(review|done)/", "group": "navigation@2" },
+        { "command": "taskkeeper.runNow", "when": "view == taskkeeper.tasks && viewItem =~ /^task\\./", "group": "inline@1" },
+        { "command": "taskkeeper.pauseTask", "when": "view == taskkeeper.tasks && viewItem == task.active", "group": "inline@2" },
+        { "command": "taskkeeper.resumeTask", "when": "view == taskkeeper.tasks && viewItem == task.paused", "group": "inline@2" },
+        { "command": "taskkeeper.editPrompt", "when": "view == taskkeeper.tasks && viewItem =~ /^task\\./", "group": "navigation@1" },
+        { "command": "taskkeeper.deleteTask", "when": "view == taskkeeper.tasks && viewItem =~ /^task\\./", "group": "navigation@9" }
+      ],
+      "commandPalette": [
+        { "command": "taskkeeper.accept", "when": "false" },
+        { "command": "taskkeeper.reject", "when": "false" },
+        { "command": "taskkeeper.cancel", "when": "false" },
+        { "command": "taskkeeper.openDiff", "when": "false" },
+        { "command": "taskkeeper.openFileDiff", "when": "false" },
+        { "command": "taskkeeper.showRun", "when": "false" },
+        { "command": "taskkeeper.openWorktree", "when": "false" },
+        { "command": "taskkeeper.pauseTask", "when": "false" },
+        { "command": "taskkeeper.resumeTask", "when": "false" },
+        { "command": "taskkeeper.editPrompt", "when": "false" },
+        { "command": "taskkeeper.deleteTask", "when": "false" },
+        { "command": "taskkeeper.runNow", "when": "false" }
+      ]
+    },
+    "configuration": {
+      "title": "TaskKeeper",
+      "properties": {
+        "taskkeeper.dataDir": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%cfg.dataDir%"
+        },
+        "taskkeeper.defaultTimezone": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%cfg.defaultTimezone%"
+        },
+        "taskkeeper.notifications": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%cfg.notifications%"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "node esbuild.mjs --production",
+    "watch": "node esbuild.mjs --watch",
+    "build:bin": "node scripts/build-bin.mjs",
+    "compile-tests": "tsc -p tsconfig.test.json",
+    "lint": "eslint src",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run compile-tests && mocha",
+    "test:integration": "npm run build && npm run compile-tests && node ./out/test/integration/runTest.js",
+    "l10n": "node scripts/l10n-sync.mjs",
+    "icon": "node scripts/make-icon.mjs",
+    "package": "vsce package --no-dependencies --target win32-x64",
+    "check": "npm run typecheck && npm run lint && npm test && npm run l10n"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.17.0",
+    "@types/vscode": "1.95.0",
+    "@typescript-eslint/eslint-plugin": "^8.30.0",
+    "@typescript-eslint/parser": "^8.30.0",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^3.3.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.8.1",
+    "glob": "^13.0.6",
+    "mocha": "^11.1.0",
+    "ovsx": "^1.1.1",
+    "typescript": "^5.8.0"
+  }
+}
