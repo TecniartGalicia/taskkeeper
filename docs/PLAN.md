@@ -567,3 +567,45 @@ Y el reparto con el sistema operativo queda explícito: **Windows nos despierta 
 Una omisión también deja constancia, con el retraso escrito: que no pasara nada es información, y sin ella el usuario no entiende el silencio de la mañana.
 
 **Efecto secundario en las pruebas:** P-20 empezó a fallar al aplicar esto, porque su tarea era diaria a las 03:00 y a cualquier otra hora del día la ejecución llega tarde y se omite. Se corrigió la prueba, no el código: ahora fija `run_if_late` con una ventana amplia, porque lo que P-20 mide es el disparo y la política tiene sus propias pruebas.
+
+
+---
+
+## 21. Estado tras la Fase 2
+
+Fase 2 (la bandeja de la mañana y la extensión) **completa y auditada con agentes reales**.
+
+### Lo construido
+
+- **Extensión de VS Code** (`apps/vscode-extension`): vistas Anoche/Tareas/Historial, asistente de siete pasos, diff con el editor nativo, aceptar/rechazar/archivar/cancelar/ejecutar-ahora/pausar/reanudar/editar-prompt, detalle de ejecución, ajuste de cupo. Sin módulos nativos: todo pasa por `taskkeeper-ctl --json`. Actualización en vivo observando `cambios.marca`. 148 cadenas en inglés y castellano.
+- **Contrato ctl↔extensión**: `ctl` gana salida `--json` estable y las órdenes que la interfaz consume. Es la única frontera.
+- **Selector de sesiones de Claude** sin redistribuir el Agent SDK (licencia «all rights reserved»): solo lo que Anthropic documenta —nombre de fichero y mtime—, con título de cortesía y degradación a id+fecha.
+- **Binarios en carpeta estable** (`%LOCALAPPDATA%`), no en la de la extensión, porque los disparadores del sistema apuntan al worker por ruta absoluta y la de la extensión cambia en cada actualización.
+
+### Auditoría con agentes reales
+
+| Prueba real | Resultado |
+|---|---|
+| Claude, perfil auditoría | Responde en dos frases; 0,20 USD; a la bandeja |
+| Claude, cambios aislados | Edita un fichero en su worktree; **aceptar funde en `main` sin push** y limpia; el checkout principal intacto todo el rato |
+| Codex, cuota agotada | El error llega como **texto sin código HTTP** |
+| Tope de presupuesto | `--max-budget-usd` corta la ejecución en `error_max_budget_usd` |
+
+### Hallazgos convertidos en código
+
+1. **Codex clasifica cuota y credencial por patrón de texto** (Claude no lo necesita, Codex sí) y **extrae la hora de reinicio** del mensaje «try again at …».
+2. **Un reintento por cuota**, programado como disparador puntual del sistema a esa hora; no se encadena un segundo en 24 h. Sin demonio, el «espera y reintenta» solo puede vivir en el programador.
+3. **`archivar`** para sacar de la bandeja lo fallido o lo que terminó sin cambios (una auditoría), distinto de aceptar/rechazar.
+4. **`ListTasks` se bloqueaba** con más de una tarea (consulta anidada en un cursor con una sola conexión) — lo destapó la prueba de humo, con regresión añadida.
+5. **P-20 es flaky bajo carga**: el servicio de tareas encola y su latencia va de 3 a 40 s; margen subido a 120 s.
+
+### Números
+
+- **Go: 58 pruebas**, incluidas 3 de integración con el Programador real y las ejecuciones reales fuera de la suite.
+- **Extensión: 19 unitarias + 4 de integración** en un VS Code real.
+- **VSIX win32-x64: 6,4 MB**, instalado y activado como cliente.
+
+### Deuda anotada
+
+- **Captura de tienda pendiente**: la captura automática de ventana se descartó porque en una máquina en uso puede capturar contenido ajeno. El *harness* de demo queda listo para una máquina limpia; el lanzamiento v0.1.0 es *preview* y puede salir sin captura.
+- **`revisado en Fase 3`**: firmar el worker (la guía lo recomienda), redacción de secretos en la vista de eventos (ya existe en el worker; falta comprobar que la extensión no muestre nada crudo).
