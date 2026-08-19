@@ -169,3 +169,44 @@ func TestCupoViveEnLaBase(t *testing.T) {
 		t.Errorf("con un valor inválido el cupo debería ser 1, fue %d", got)
 	}
 }
+
+// Cuota agotada: se clasifica como failed_quota (no como fallo generico), se
+// programa UN reintento a la hora que dice el proveedor, y un segundo fallo por
+// cuota en las mismas 24 h no encadena otro reintento.
+func TestCuotaAgotadaProgramaUnSoloReintento(t *testing.T) {
+	db, taskID, _, o, d := montar(t, "cuota", "auditoria")
+
+	var registrados []time.Time
+	o.RegistrarReintento = func(id string, cuando time.Time) error {
+		if id != taskID {
+			t.Errorf("reintento para otra tarea: %s", id)
+		}
+		registrados = append(registrados, cuando)
+		return nil
+	}
+
+	for i := 0; i < 2; i++ {
+		if err := Ejecutar(context.Background(), db, d, o, taskID, time.Now().UTC().Add(time.Duration(i)*time.Hour)); err != nil {
+			t.Fatalf("Ejecutar #%d: %v", i+1, err)
+		}
+	}
+
+	var n int
+	db.QueryRow(`SELECT COUNT(*) FROM runs WHERE task_id=? AND status='failed_quota'`, taskID).Scan(&n)
+	if n != 2 {
+		t.Fatalf("se esperaban 2 ejecuciones en failed_quota, hay %d", n)
+	}
+	if len(registrados) != 1 {
+		t.Fatalf("se programaron %d reintentos; debe ser exactamente 1", len(registrados))
+	}
+	// El agente falso dice "try again at" dentro de una hora: el reintento va
+	// justo despues, no dentro de la espera por defecto.
+	if d := time.Until(registrados[0]); d < 55*time.Minute || d > 70*time.Minute {
+		t.Errorf("el reintento no respeta la hora del proveedor: dentro de %s", d.Round(time.Minute))
+	}
+	var reset string
+	db.QueryRow(`SELECT quota_reset_at FROM runs WHERE task_id=? ORDER BY rowid LIMIT 1`, taskID).Scan(&reset)
+	if reset == "" {
+		t.Errorf("no se guardo quota_reset_at")
+	}
+}

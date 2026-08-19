@@ -62,7 +62,8 @@ describe('model', () => {
   it('maps every state to a context value the menus know', () => {
     assert.strictEqual(runContext(run('running')), 'run.active');
     assert.strictEqual(runContext(run('preflight')), 'run.active');
-    assert.strictEqual(runContext(run('awaiting_review')), 'run.review');
+    assert.strictEqual(runContext(run('awaiting_review')), 'run.reviewEmpty', 'an audit with no files is read-and-archive');
+    assert.strictEqual(runContext({ ...run('awaiting_review'), ficheros: ['a.py'] }), 'run.review');
     assert.strictEqual(runContext(run('accepted')), 'run.done');
     assert.strictEqual(runContext(run('failed_auth')), 'run.failed');
     assert.strictEqual(runContext(run('skipped')), 'run.other');

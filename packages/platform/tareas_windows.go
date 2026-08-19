@@ -22,7 +22,15 @@ func RegistrarTarea(taskID, comando, argumentos string, spec EspecDisparador) er
 		Tipo: spec.Tipo, Inicio: spec.Inicio, Weekdays: spec.Weekdays,
 	})
 }
-func RetirarTarea(taskID string) error   { return win.Unregister(taskID) }
+func RetirarTarea(taskID string) error { return win.Unregister(taskID) }
+
+// RegistrarReintento deja un disparador puntual `<id>-retry` que lanza el worker
+// en modo manual a la hora indicada y se retira a sí mismo al arrancar.
+func RegistrarReintento(worker, taskID string, cuando time.Time) error {
+	id := taskID + "-retry"
+	args := "--run " + taskID + " --manual --retry-trigger " + id
+	return win.Register(id, worker, args, win.TriggerSpec{Tipo: "once", Inicio: cuando.Local()})
+}
 func NombreDeTarea(taskID string) string { return win.NombreTarea(taskID) }
 
 // LanzarWorker arranca una ejecución a mano y DEVUELVE EL CONTROL AL INSTANTE.

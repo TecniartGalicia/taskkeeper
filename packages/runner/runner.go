@@ -27,13 +27,20 @@ type Opciones struct {
 	DirWorktrees   string
 	EsperaTurno    time.Duration
 	SondeoCancel   time.Duration
+	// Cuánto esperar para reintentar por cuota cuando el proveedor no dice
+	// cuándo vuelve.
+	EsperaCuotaPorDefecto time.Duration
+	// Registra en el sistema un disparador puntual para reintentar la tarea.
+	// Nil desactiva el reintento (pruebas, plataformas sin implementación).
+	RegistrarReintento func(taskID string, cuando time.Time) error
 }
 
 func PorDefecto() Opciones {
 	return Opciones{
-		CupoSimultaneo: 1,
-		EsperaTurno:    30 * time.Minute,
-		SondeoCancel:   3 * time.Second,
+		CupoSimultaneo:        1,
+		EsperaTurno:           30 * time.Minute,
+		SondeoCancel:          3 * time.Second,
+		EsperaCuotaPorDefecto: time.Hour,
 	}
 }
 
@@ -282,8 +289,38 @@ func Ejecutar(ctx context.Context, db *store.DB, d Deps, o Opciones,
 		}
 		db.SetRunField(run.ID, "error_code", des.Codigo)
 		db.Transition(run.ID, store.State(des.Estado), des.Detalle)
+		if des.Estado == string(store.StateFailedQuota) {
+			programarReintentoPorCuota(db, o, task, run, des.ReintentarA)
+		}
 	}
 	return nil
+}
+
+// programarReintentoPorCuota deja UN disparador puntual del sistema para volver
+// a intentar la tarea cuando el proveedor dice que vuelve la cuota. Un solo
+// reintento por tarea y ocurrencia: si vuelve a fallar por cuota, ya no se
+// encadena otro. Sin demonio, el "espera y reintenta" solo puede vivir en el
+// programador del sistema.
+func programarReintentoPorCuota(db *store.DB, o Opciones, task *store.Task, run *store.Run, cuando *time.Time) {
+	if o.RegistrarReintento == nil {
+		return
+	}
+	if db.YaHayReintentoPorCuota(task.ID) {
+		db.Audit(run.ID, task.ID, "system", "quota_retry_skipped",
+			`{"motivo":"ya se reintentó una vez por cuota en las últimas 24 h"}`)
+		return
+	}
+	t := time.Now().Add(o.EsperaCuotaPorDefecto)
+	if cuando != nil && cuando.After(time.Now()) {
+		t = cuando.Add(2 * time.Minute) // margen sobre lo que dice el proveedor
+	}
+	if err := o.RegistrarReintento(task.ID, t); err != nil {
+		db.Audit(run.ID, task.ID, "system", "quota_retry_failed", fmt.Sprintf(`{"error":%q}`, err.Error()))
+		return
+	}
+	db.SetRunField(run.ID, "quota_reset_at", t.UTC().Format(time.RFC3339))
+	db.Audit(run.ID, task.ID, "system", "quota_retry_scheduled",
+		fmt.Sprintf(`{"at":%q}`, t.UTC().Format(time.RFC3339)))
 }
 
 func consumir(ctx context.Context, db *store.DB, runID string, ad adapters.Adaptador,
@@ -354,8 +391,13 @@ func consumir(ctx context.Context, db *store.DB, runID string, ad adapters.Adapt
 						Codigo: ev.CodigoError, Detalle: "credencial rechazada"}
 				case 429:
 					grupo.KillAll()
-					return adapters.Desenlace{Estado: string(store.StateFailedQuota),
+					d := adapters.Desenlace{Estado: string(store.StateFailedQuota),
 						Codigo: ev.CodigoError, Detalle: "límite de uso del proveedor"}
+					if !ev.ReinicioCuota.IsZero() {
+						r := ev.ReinicioCuota
+						d.ReintentarA = &r
+					}
+					return d
 				}
 			}
 		}

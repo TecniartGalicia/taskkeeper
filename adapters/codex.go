@@ -6,8 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 type Codex struct {
@@ -111,10 +113,36 @@ type lineaCodex struct {
 	Type     string `json:"type"`
 	ThreadID string `json:"thread_id"`
 	TurnID   string `json:"turn_id"`
-	Error    struct {
+	// Un evento {"type":"error"} lleva el mensaje en la raíz; turn.failed lo
+	// lleva anidado. Se aceptan las dos formas.
+	Message string `json:"message"`
+	Error   struct {
 		Message string `json:"message"`
 		Status  int    `json:"status"`
 	} `json:"error"`
+}
+
+// Verificado con el agente real: el error de cuota de Codex NO trae código
+// HTTP, solo texto:
+//
+//	{"type":"error","message":"You've hit your usage limit. ... try again at Aug 20th, 2026 6:39 PM."}
+//
+// Así que aquí sí hace falta la tabla de patrones que en Claude sobra. Ante la
+// duda se deja EstadoHTTP en 0 y el runner lo tratará como fallo genérico, que
+// es el lado seguro.
+var (
+	reCuotaCodex = regexp.MustCompile(`(?i)usage limit|rate limit|quota|too many requests|try again at`)
+	reAuthCodex  = regexp.MustCompile(`(?i)not logged in|unauthori[sz]ed|login required|invalid api key|authentication`)
+)
+
+func clasificarMensajeCodex(msg string) int {
+	switch {
+	case reAuthCodex.MatchString(msg):
+		return 401
+	case reCuotaCodex.MatchString(msg):
+		return 429
+	}
+	return 0
 }
 
 func (c *Codex) Parsear(linea []byte) (Evento, bool) {
@@ -130,9 +158,42 @@ func (c *Codex) Parsear(linea []byte) (Evento, bool) {
 		return Evento{Tipo: EvMensaje, SesionID: l.ThreadID, TurnoID: l.TurnID}, true
 	case "turn.completed":
 		return Evento{Tipo: EvResultado, SesionID: l.ThreadID, Subtipo: "success"}, true
-	case "error":
-		return Evento{Tipo: EvReintentoAPI, EstadoHTTP: l.Error.Status,
-			CodigoError: l.Error.Message}, true
+	case "error", "turn.failed":
+		msg := l.Message
+		if msg == "" {
+			msg = l.Error.Message
+		}
+		estado := l.Error.Status
+		if estado == 0 {
+			estado = clasificarMensajeCodex(msg)
+		}
+		return Evento{Tipo: EvReintentoAPI, EstadoHTTP: estado, CodigoError: recortar(msg, 160),
+			ReinicioCuota: horaDeReinicioCodex(msg)}, true
 	}
 	return Evento{Tipo: EvMensaje, Bruto: string(linea)}, true
+}
+
+// "try again at Aug 20th, 2026 6:39 PM" → hora local. Si no se entiende, cero:
+// el runner aplicará su espera por defecto.
+var reReinicio = regexp.MustCompile(`try again at ([A-Za-z]{3,9}) (\d{1,2})(?:st|nd|rd|th)?,? (\d{4}) (\d{1,2}:\d{2} ?[AP]M)`)
+
+func horaDeReinicioCodex(msg string) time.Time {
+	m := reReinicio.FindStringSubmatch(msg)
+	if m == nil {
+		return time.Time{}
+	}
+	cadena := fmt.Sprintf("%s %s %s %s", m[1], m[2], m[3], strings.ReplaceAll(m[4], " ", ""))
+	for _, layout := range []string{"Jan 2 2006 3:04PM", "January 2 2006 3:04PM"} {
+		if t, err := time.ParseInLocation(layout, cadena, time.Local); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
+}
+
+func recortar(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }

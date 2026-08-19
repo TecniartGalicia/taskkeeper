@@ -60,6 +60,8 @@ type Evento struct {
 	Turnos      *int
 	Texto       string
 	Bruto       string
+	// Cuándo dice el proveedor que vuelve la cuota, si lo dice. Cero si no.
+	ReinicioCuota time.Time
 }
 
 type Capacidades struct {

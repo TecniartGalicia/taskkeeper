@@ -139,6 +139,9 @@ export class Ctl {
   reject(runId: string): Promise<{ id: string; decision: string }> {
     return this.call('rechazar', runId);
   }
+  archive(runId: string): Promise<{ id: string; decision: string }> {
+    return this.call('archivar', runId);
+  }
 }
 
 export interface CreateParams {

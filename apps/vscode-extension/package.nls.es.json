@@ -24,5 +24,6 @@
   "cmd.showEnvironment": "Mostrar entorno",
   "cfg.dataDir": "Carpeta donde TaskKeeper guarda su base local, los worktrees y los registros. Vacío usa la predeterminada (`%APPDATA%\\Argalla\\TaskKeeper` en Windows).",
   "cfg.defaultTimezone": "Zona horaria IANA que se ofrece por defecto al crear una tarea (por ejemplo `Europe/Madrid`). Vacío usa la del sistema.",
-  "cfg.notifications": "Mostrar un aviso cuando una ejecución termina, falla o espera tu revisión."
+  "cfg.notifications": "Mostrar un aviso cuando una ejecución termina, falla o espera tu revisión.",
+  "cmd.archive": "Archivar (sacar de la bandeja)"
 }

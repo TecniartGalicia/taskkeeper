@@ -225,3 +225,21 @@ func (db *DB) Eventos(runID string, desde int) ([]Evento, error) {
 	}
 	return out, rows.Err()
 }
+
+// EsActivo dice si una ejecución sigue viva (no se puede archivar ni decidir).
+func EsActivo(s State) bool {
+	switch s {
+	case StateQueued, StatePreflight, StateRunning, StateVerifying:
+		return true
+	}
+	return false
+}
+
+// YaHayReintentoPorCuota dice si esta tarea ya programó un reintento por cuota
+// en las últimas 24 horas. Sirve para no encadenar reintentos.
+func (db *DB) YaHayReintentoPorCuota(taskID string) bool {
+	var n int
+	db.QueryRow(`SELECT COUNT(*) FROM audit WHERE task_id=? AND action='quota_retry_scheduled'
+	             AND at > datetime('now','-1 day')`, taskID).Scan(&n)
+	return n > 0
+}

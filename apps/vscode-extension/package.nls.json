@@ -24,5 +24,6 @@
   "cmd.showEnvironment": "Show Environment",
   "cfg.dataDir": "Folder where TaskKeeper keeps its local database, worktrees and logs. Leave empty for the default (`%APPDATA%\\Argalla\\TaskKeeper` on Windows).",
   "cfg.defaultTimezone": "IANA time zone offered by default when creating a task (for example `Europe/Madrid`). Empty uses the system time zone.",
-  "cfg.notifications": "Show a notification when a run finishes, fails or is waiting for your review."
+  "cfg.notifications": "Show a notification when a run finishes, fails or is waiting for your review.",
+  "cmd.archive": "Archive (remove from inbox)"
 }

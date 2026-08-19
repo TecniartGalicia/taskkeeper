@@ -103,54 +103,234 @@
       }
     ],
     "commands": [
-      { "command": "taskkeeper.newTask", "title": "%cmd.newTask%", "category": "TaskKeeper", "icon": "$(add)" },
-      { "command": "taskkeeper.refresh", "title": "%cmd.refresh%", "category": "TaskKeeper", "icon": "$(refresh)" },
-      { "command": "taskkeeper.runNow", "title": "%cmd.runNow%", "category": "TaskKeeper", "icon": "$(play)" },
-      { "command": "taskkeeper.pauseTask", "title": "%cmd.pauseTask%", "category": "TaskKeeper", "icon": "$(debug-pause)" },
-      { "command": "taskkeeper.resumeTask", "title": "%cmd.resumeTask%", "category": "TaskKeeper", "icon": "$(debug-start)" },
-      { "command": "taskkeeper.editPrompt", "title": "%cmd.editPrompt%", "category": "TaskKeeper", "icon": "$(edit)" },
-      { "command": "taskkeeper.deleteTask", "title": "%cmd.deleteTask%", "category": "TaskKeeper", "icon": "$(trash)" },
-      { "command": "taskkeeper.accept", "title": "%cmd.accept%", "category": "TaskKeeper", "icon": "$(check)" },
-      { "command": "taskkeeper.reject", "title": "%cmd.reject%", "category": "TaskKeeper", "icon": "$(close)" },
-      { "command": "taskkeeper.cancel", "title": "%cmd.cancel%", "category": "TaskKeeper", "icon": "$(debug-stop)" },
-      { "command": "taskkeeper.openDiff", "title": "%cmd.openDiff%", "category": "TaskKeeper", "icon": "$(diff)" },
-      { "command": "taskkeeper.openFileDiff", "title": "%cmd.openFileDiff%", "category": "TaskKeeper" },
-      { "command": "taskkeeper.showRun", "title": "%cmd.showRun%", "category": "TaskKeeper", "icon": "$(info)" },
-      { "command": "taskkeeper.openWorktree", "title": "%cmd.openWorktree%", "category": "TaskKeeper", "icon": "$(folder-opened)" },
-      { "command": "taskkeeper.setConcurrency", "title": "%cmd.setConcurrency%", "category": "TaskKeeper" },
-      { "command": "taskkeeper.showEnvironment", "title": "%cmd.showEnvironment%", "category": "TaskKeeper" }
+      {
+        "command": "taskkeeper.newTask",
+        "title": "%cmd.newTask%",
+        "category": "TaskKeeper",
+        "icon": "$(add)"
+      },
+      {
+        "command": "taskkeeper.refresh",
+        "title": "%cmd.refresh%",
+        "category": "TaskKeeper",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "taskkeeper.runNow",
+        "title": "%cmd.runNow%",
+        "category": "TaskKeeper",
+        "icon": "$(play)"
+      },
+      {
+        "command": "taskkeeper.pauseTask",
+        "title": "%cmd.pauseTask%",
+        "category": "TaskKeeper",
+        "icon": "$(debug-pause)"
+      },
+      {
+        "command": "taskkeeper.resumeTask",
+        "title": "%cmd.resumeTask%",
+        "category": "TaskKeeper",
+        "icon": "$(debug-start)"
+      },
+      {
+        "command": "taskkeeper.editPrompt",
+        "title": "%cmd.editPrompt%",
+        "category": "TaskKeeper",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "taskkeeper.deleteTask",
+        "title": "%cmd.deleteTask%",
+        "category": "TaskKeeper",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "taskkeeper.accept",
+        "title": "%cmd.accept%",
+        "category": "TaskKeeper",
+        "icon": "$(check)"
+      },
+      {
+        "command": "taskkeeper.reject",
+        "title": "%cmd.reject%",
+        "category": "TaskKeeper",
+        "icon": "$(close)"
+      },
+      {
+        "command": "taskkeeper.cancel",
+        "title": "%cmd.cancel%",
+        "category": "TaskKeeper",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "taskkeeper.archive",
+        "title": "%cmd.archive%",
+        "category": "TaskKeeper",
+        "icon": "$(archive)"
+      },
+      {
+        "command": "taskkeeper.openDiff",
+        "title": "%cmd.openDiff%",
+        "category": "TaskKeeper",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "taskkeeper.openFileDiff",
+        "title": "%cmd.openFileDiff%",
+        "category": "TaskKeeper"
+      },
+      {
+        "command": "taskkeeper.showRun",
+        "title": "%cmd.showRun%",
+        "category": "TaskKeeper",
+        "icon": "$(info)"
+      },
+      {
+        "command": "taskkeeper.openWorktree",
+        "title": "%cmd.openWorktree%",
+        "category": "TaskKeeper",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "taskkeeper.setConcurrency",
+        "title": "%cmd.setConcurrency%",
+        "category": "TaskKeeper"
+      },
+      {
+        "command": "taskkeeper.showEnvironment",
+        "title": "%cmd.showEnvironment%",
+        "category": "TaskKeeper"
+      }
     ],
     "menus": {
       "view/title": [
-        { "command": "taskkeeper.newTask", "when": "view == taskkeeper.tasks || view == taskkeeper.inbox", "group": "navigation@1" },
-        { "command": "taskkeeper.refresh", "when": "view =~ /^taskkeeper\\./", "group": "navigation@9" }
+        {
+          "command": "taskkeeper.newTask",
+          "when": "view == taskkeeper.tasks || view == taskkeeper.inbox",
+          "group": "navigation@1"
+        },
+        {
+          "command": "taskkeeper.refresh",
+          "when": "view =~ /^taskkeeper\\./",
+          "group": "navigation@9"
+        }
       ],
       "view/item/context": [
-        { "command": "taskkeeper.accept", "when": "view == taskkeeper.inbox && viewItem == run.review", "group": "inline@1" },
-        { "command": "taskkeeper.reject", "when": "view == taskkeeper.inbox && viewItem == run.review", "group": "inline@2" },
-        { "command": "taskkeeper.openDiff", "when": "view =~ /^taskkeeper\\./ && viewItem =~ /^run\\.(review|done)/", "group": "inline@3" },
-        { "command": "taskkeeper.cancel", "when": "view =~ /^taskkeeper\\./ && viewItem == run.active", "group": "inline@1" },
-        { "command": "taskkeeper.showRun", "when": "view =~ /^taskkeeper\\./ && viewItem =~ /^run\\./", "group": "navigation@1" },
-        { "command": "taskkeeper.openWorktree", "when": "view =~ /^taskkeeper\\./ && viewItem =~ /^run\\.(review|done)/", "group": "navigation@2" },
-        { "command": "taskkeeper.runNow", "when": "view == taskkeeper.tasks && viewItem =~ /^task\\./", "group": "inline@1" },
-        { "command": "taskkeeper.pauseTask", "when": "view == taskkeeper.tasks && viewItem == task.active", "group": "inline@2" },
-        { "command": "taskkeeper.resumeTask", "when": "view == taskkeeper.tasks && viewItem == task.paused", "group": "inline@2" },
-        { "command": "taskkeeper.editPrompt", "when": "view == taskkeeper.tasks && viewItem =~ /^task\\./", "group": "navigation@1" },
-        { "command": "taskkeeper.deleteTask", "when": "view == taskkeeper.tasks && viewItem =~ /^task\\./", "group": "navigation@9" }
+        {
+          "command": "taskkeeper.accept",
+          "when": "view == taskkeeper.inbox && viewItem == run.review",
+          "group": "inline@1"
+        },
+        {
+          "command": "taskkeeper.reject",
+          "when": "view == taskkeeper.inbox && viewItem == run.review",
+          "group": "inline@2"
+        },
+        {
+          "command": "taskkeeper.archive",
+          "when": "view =~ /^taskkeeper\\./ && (viewItem == run.failed || viewItem == run.reviewEmpty)",
+          "group": "inline@1"
+        },
+        {
+          "command": "taskkeeper.openDiff",
+          "when": "view =~ /^taskkeeper\\./ && viewItem =~ /^run\\.(review|done)/",
+          "group": "inline@3"
+        },
+        {
+          "command": "taskkeeper.cancel",
+          "when": "view =~ /^taskkeeper\\./ && viewItem == run.active",
+          "group": "inline@1"
+        },
+        {
+          "command": "taskkeeper.showRun",
+          "when": "view =~ /^taskkeeper\\./ && viewItem =~ /^run\\./",
+          "group": "navigation@1"
+        },
+        {
+          "command": "taskkeeper.openWorktree",
+          "when": "view =~ /^taskkeeper\\./ && viewItem =~ /^run\\.(review|done)/",
+          "group": "navigation@2"
+        },
+        {
+          "command": "taskkeeper.runNow",
+          "when": "view == taskkeeper.tasks && viewItem =~ /^task\\./",
+          "group": "inline@1"
+        },
+        {
+          "command": "taskkeeper.pauseTask",
+          "when": "view == taskkeeper.tasks && viewItem == task.active",
+          "group": "inline@2"
+        },
+        {
+          "command": "taskkeeper.resumeTask",
+          "when": "view == taskkeeper.tasks && viewItem == task.paused",
+          "group": "inline@2"
+        },
+        {
+          "command": "taskkeeper.editPrompt",
+          "when": "view == taskkeeper.tasks && viewItem =~ /^task\\./",
+          "group": "navigation@1"
+        },
+        {
+          "command": "taskkeeper.deleteTask",
+          "when": "view == taskkeeper.tasks && viewItem =~ /^task\\./",
+          "group": "navigation@9"
+        }
       ],
       "commandPalette": [
-        { "command": "taskkeeper.accept", "when": "false" },
-        { "command": "taskkeeper.reject", "when": "false" },
-        { "command": "taskkeeper.cancel", "when": "false" },
-        { "command": "taskkeeper.openDiff", "when": "false" },
-        { "command": "taskkeeper.openFileDiff", "when": "false" },
-        { "command": "taskkeeper.showRun", "when": "false" },
-        { "command": "taskkeeper.openWorktree", "when": "false" },
-        { "command": "taskkeeper.pauseTask", "when": "false" },
-        { "command": "taskkeeper.resumeTask", "when": "false" },
-        { "command": "taskkeeper.editPrompt", "when": "false" },
-        { "command": "taskkeeper.deleteTask", "when": "false" },
-        { "command": "taskkeeper.runNow", "when": "false" }
+        {
+          "command": "taskkeeper.accept",
+          "when": "false"
+        },
+        {
+          "command": "taskkeeper.reject",
+          "when": "false"
+        },
+        {
+          "command": "taskkeeper.cancel",
+          "when": "false"
+        },
+        {
+          "command": "taskkeeper.openDiff",
+          "when": "false"
+        },
+        {
+          "command": "taskkeeper.openFileDiff",
+          "when": "false"
+        },
+        {
+          "command": "taskkeeper.showRun",
+          "when": "false"
+        },
+        {
+          "command": "taskkeeper.openWorktree",
+          "when": "false"
+        },
+        {
+          "command": "taskkeeper.pauseTask",
+          "when": "false"
+        },
+        {
+          "command": "taskkeeper.resumeTask",
+          "when": "false"
+        },
+        {
+          "command": "taskkeeper.editPrompt",
+          "when": "false"
+        },
+        {
+          "command": "taskkeeper.deleteTask",
+          "when": "false"
+        },
+        {
+          "command": "taskkeeper.runNow",
+          "when": "false"
+        },
+        {
+          "command": "taskkeeper.archive",
+          "when": "false"
+        }
       ]
     },
     "configuration": {
@@ -187,7 +367,8 @@
     "l10n": "node scripts/l10n-sync.mjs",
     "icon": "node scripts/make-icon.mjs",
     "package": "vsce package --no-dependencies --target win32-x64",
-    "check": "npm run typecheck && npm run lint && npm test && npm run l10n"
+    "check": "npm run typecheck && npm run lint && npm test && npm run l10n",
+    "demo": "npm run build && npm run compile-tests && node ./out/test/demo/runDemo.js"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

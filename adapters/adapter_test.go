@@ -175,3 +175,37 @@ func TestEntornoMinimoNoFiltraLaSesion(t *testing.T) {
 		t.Errorf("el entorno mínimo quedó vacío: el proceso no arrancaría")
 	}
 }
+
+// Verificado con el agente real el 19 de agosto: el error de cuota de Codex
+// llega como texto sin código HTTP. Sin esta clasificación, una cuota agotada
+// se registraba como fallo genérico y perdía el reintento diferido.
+func TestCodexCuotaSinCodigoHTTP(t *testing.T) {
+	c := &Codex{}
+	ev, _ := c.Parsear([]byte(`{"type":"error","message":"You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Aug 20th, 2026 6:39 PM."}`))
+	if ev.Tipo != EvReintentoAPI || ev.EstadoHTTP != 429 {
+		t.Errorf("la cuota agotada de Codex debe clasificarse como 429, dio %+v", ev)
+	}
+	ev, _ = c.Parsear([]byte(`{"type":"turn.failed","error":{"message":"You've hit your usage limit."}}`))
+	if ev.Tipo != EvReintentoAPI || ev.EstadoHTTP != 429 {
+		t.Errorf("turn.failed por cuota debe clasificarse como 429, dio %+v", ev)
+	}
+	ev, _ = c.Parsear([]byte(`{"type":"error","message":"Not logged in. Run codex login."}`))
+	if ev.EstadoHTTP != 401 {
+		t.Errorf("credencial ausente debe clasificarse como 401, dio %+v", ev)
+	}
+	// Un error cualquiera no se adivina: queda como fallo genérico.
+	ev, _ = c.Parsear([]byte(`{"type":"error","message":"something odd happened"}`))
+	if ev.EstadoHTTP != 0 {
+		t.Errorf("un error desconocido no debe clasificarse, dio %+v", ev)
+	}
+}
+
+func TestCodexHoraDeReinicio(t *testing.T) {
+	got := horaDeReinicioCodex("You've hit your usage limit. ... or try again at Aug 20th, 2026 6:39 PM.")
+	if got.IsZero() || got.Year() != 2026 || got.Month() != 8 || got.Day() != 20 || got.Hour() != 18 || got.Minute() != 39 {
+		t.Errorf("hora de reinicio mal interpretada: %v", got)
+	}
+	if !horaDeReinicioCodex("try again later").IsZero() {
+		t.Errorf("sin fecha reconocible debe devolver cero")
+	}
+}

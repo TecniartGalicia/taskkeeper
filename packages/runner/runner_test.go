@@ -28,6 +28,9 @@ func (a *agenteFalso) Detectar() (*adapters.Instalacion, error) {
 }
 func (a *agenteFalso) Capacidades() adapters.Capacidades { return adapters.Capacidades{} }
 func (a *agenteFalso) Parsear(l []byte) (adapters.Evento, bool) {
+	if a.guion == "cuota" {
+		return (&adapters.Codex{}).Parsear(l)
+	}
 	return (&adapters.Claude{}).Parsear(l)
 }
 func (a *agenteFalso) Comando(p adapters.Peticion) (*exec.Cmd, error) {
@@ -63,6 +66,14 @@ func TestAyudanteAgente(t *testing.T) {
 			out.Sync()
 			time.Sleep(2 * time.Second)
 		}
+
+	case "cuota":
+		// Como Codex el 19 de agosto: texto sin codigo HTTP, con hora de reinicio.
+		en1h := time.Now().Add(time.Hour)
+		out.WriteString(`{"type":"error","message":"You've hit your usage limit. Upgrade or try again at ` +
+			en1h.Format("Jan 2, 2006 3:04 PM") + `."}` + "\n")
+		out.Sync()
+		time.Sleep(20 * time.Second) // el runner debe cortar sin esperar
 
 	case "eterno":
 		// Lanza un nieto y se queda esperando, para probar la cancelación.

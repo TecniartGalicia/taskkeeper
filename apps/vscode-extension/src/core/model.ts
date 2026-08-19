@@ -116,9 +116,11 @@ export function isFailed(s: string): boolean {
 }
 
 /** Context value for tree items: drives which inline actions appear. */
-export function runContext(r: Run): 'run.active' | 'run.review' | 'run.done' | 'run.failed' | 'run.other' {
+export function runContext(r: Run): 'run.active' | 'run.review' | 'run.reviewEmpty' | 'run.done' | 'run.failed' | 'run.other' {
   if (isActive(r.estado)) return 'run.active';
-  if (r.estado === REVIEW_STATE) return 'run.review';
+  // An audit that finished without touching files has nothing to merge:
+  // it is "read and archive", not "accept or reject".
+  if (r.estado === REVIEW_STATE) return r.ficheros.length ? 'run.review' : 'run.reviewEmpty';
   if (DONE_STATES.has(r.estado)) return 'run.done';
   if (isFailed(r.estado)) return 'run.failed';
   return 'run.other';

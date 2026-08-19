@@ -116,6 +116,8 @@ func main() {
 		decidir(out, db, resto[1:], true)
 	case "rechazar":
 		decidir(out, db, resto[1:], false)
+	case "archivar":
+		archivar(out, db, resto[1:])
 	case "agentes":
 		agentes(out)
 	case "entorno":
@@ -148,6 +150,7 @@ func uso() {
   eventos   <id-ejecucion> [--desde <seq>]
   aceptar   <id-ejecucion>      funde en la rama base, en local
   rechazar  <id-ejecucion>      borra worktree y rama
+  archivar  <id-ejecucion>      saca de la bandeja una ejecucion fallida o sin cambios; limpia su worktree
   agentes                       qué agentes hay instalados y dónde
   entorno                       rutas y avisos de esta máquina
   version`)
@@ -724,6 +727,36 @@ func decidir(out salida, db *store.DB, args []string, aceptar bool) {
 	db.Audit(runID, r.TaskID, "user", "rejected", `{}`)
 	out.ok(map[string]any{"id": runID, "decision": "rejected"}, func() {
 		fmt.Println("rechazada; worktree y rama borrados")
+	})
+}
+
+// archivar es la salida de la bandeja para lo que no se acepta ni se rechaza:
+// una ejecución fallida, o una auditoría que terminó bien sin tocar ficheros.
+// Limpia el worktree y la rama, marca la decisión y no toca la rama base.
+func archivar(out salida, db *store.DB, args []string) {
+	runID := arg(out, args, 0)
+	r, err := db.GetRunDetalle(runID)
+	if err != nil {
+		out.fallo(err)
+	}
+	if store.EsActivo(r.Status) {
+		out.fallo(fmt.Errorf("la ejecución sigue en curso (%s); cancélala antes de archivarla", r.Status))
+	}
+	if r.Status == store.StateAwaitingReview && len(aEjecucionJSON(r).Ficheros) > 0 {
+		out.fallo(fmt.Errorf("esta ejecución tiene cambios pendientes: acéptala o recházala"))
+	}
+	ctx := context.Background()
+	if r.WorktreePath != "" {
+		// Un fallo puede haber dejado el worktree a medias; se limpia lo que haya.
+		gitwt.Descartar(ctx, r.GitRoot, r.WorktreePath, r.WorktreeBranch)
+	}
+	if r.Status == store.StateAwaitingReview {
+		db.Transition(runID, store.StateAccepted, "sin cambios que fundir")
+	}
+	db.SetReview(runID, "archived")
+	db.Audit(runID, r.TaskID, "user", "archived", `{}`)
+	out.ok(map[string]any{"id": runID, "decision": "archived"}, func() {
+		fmt.Println("archivada; worktree limpiado")
 	})
 }
 

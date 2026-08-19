@@ -11,9 +11,11 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/argalla/taskkeeper/packages/config"
+	"github.com/argalla/taskkeeper/packages/platform"
 	"github.com/argalla/taskkeeper/packages/runner"
 	"github.com/argalla/taskkeeper/packages/store"
 )
@@ -26,6 +28,7 @@ func main() {
 		ocurrencia = flag.String("occurrence", "", "instante previsto en RFC3339 (por omisión, ahora)")
 		cupo       = flag.Int("cupo", 0, "sobrescribe el cupo de simultáneas; 0 = usar el ajuste guardado")
 		manual     = flag.Bool("manual", false, "arranque a mano: no deriva la hora prevista")
+		retryTrig  = flag.String("retry-trigger", "", "nombre del disparador puntual que nos lanzó; se retira al arrancar")
 		home       = flag.String("home", "", "raíz de datos; el disparador del sistema no hereda el entorno")
 		verVersion = flag.Bool("version", false, "muestra la versión y sale")
 	)
@@ -71,7 +74,15 @@ func main() {
 	ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer parar()
 
+	if *retryTrig != "" {
+		// Un reintento por cuota es de un solo uso: el disparador se va con él.
+		platform.RetirarTarea(strings.TrimPrefix(*retryTrig, ""))
+	}
+
 	o := runner.PorDefecto()
+	o.RegistrarReintento = func(taskID string, cuando time.Time) error {
+		return platform.RegistrarReintento(cfg.Worker, taskID, cuando)
+	}
 	// El cupo es un ajuste de la máquina y vive en la base. Antes iba en la línea
 	// de órdenes de cada disparador, así que cambiarlo obligaba a reescribirlos
 	// todos.

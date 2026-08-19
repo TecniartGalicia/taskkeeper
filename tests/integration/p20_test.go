@@ -75,7 +75,7 @@ func TestElSistemaOperativoDisparaElWorker(t *testing.T) {
 	}
 	defer db2.Close()
 
-	limite := time.Now().Add(45 * time.Second)
+	limite := time.Now().Add(120 * time.Second)
 	var estado, runID string
 	for time.Now().Before(limite) {
 		err := db2.QueryRow(`SELECT id, status FROM runs WHERE task_id=? ORDER BY rowid DESC LIMIT 1`,
@@ -87,7 +87,12 @@ func TestElSistemaOperativoDisparaElWorker(t *testing.T) {
 	}
 
 	if runID == "" {
-		t.Fatalf("el sistema no llegó a lanzar el worker, o el worker no escribió nada")
+		// El servicio de tareas de Windows encola las ejecuciones cuando esta
+		// ocupado, asi que el tiempo hasta el disparo varia mucho (3 s a 40 s
+		// medidos). Damos un margen amplio; si aun asi no dispara, el diagnostico
+		// distingue "no disparo" de "el worker no escribio".
+		out, _ := exec.Command("schtasks", "/Query", "/TN", nombre, "/FO", "LIST", "/V").CombinedOutput()
+		t.Fatalf("el sistema no llegó a lanzar el worker en 120 s.\nestado de la tarea:\n%s", out)
 	}
 	t.Logf("el sistema lanzó el worker; ejecución %s en estado %s", runID[:8], estado)
 

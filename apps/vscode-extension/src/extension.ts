@@ -189,6 +189,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     refreshAll();
   });
 
+  reg('taskkeeper.archive', async (item?: RunItem) => {
+    const c = need();
+    const run = item?.run ?? (await pickRun(inbox.runs, 'archivable'));
+    if (!run) return;
+    await c.archive(run.id);
+    refreshAll();
+  });
+
   reg('taskkeeper.cancel', async (item?: RunItem) => {
     const c = need();
     const run = item?.run ?? (await pickRun(inbox.runs, 'active'));
@@ -284,8 +292,19 @@ async function pickTaskId(c: Ctl): Promise<string | undefined> {
   return pick?.id;
 }
 
-async function pickRun(runs: Run[], filter: 'awaiting_review' | 'active' | 'any'): Promise<Run | undefined> {
-  const list = runs.filter((r) => (filter === 'any' ? true : filter === 'active' ? isActive(r.estado) : r.estado === filter));
+async function pickRun(runs: Run[], filter: 'awaiting_review' | 'active' | 'archivable' | 'any'): Promise<Run | undefined> {
+  const list = runs.filter((r) => {
+    switch (filter) {
+      case 'any':
+        return true;
+      case 'active':
+        return isActive(r.estado);
+      case 'archivable':
+        return r.estado.startsWith('failed') || r.estado === 'cancelled' || (r.estado === 'awaiting_review' && r.ficheros.length === 0);
+      default:
+        return r.estado === filter && r.ficheros.length > 0;
+    }
+  });
   if (!list.length) {
     vscode.window.showInformationMessage(t('Nothing to choose from.'));
     return undefined;
