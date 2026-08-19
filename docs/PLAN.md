@@ -637,3 +637,30 @@ Fecha: 2026-08-19. Auditoría cerrada.
 
 - **Go**: toda la suite pasa (adapters, gitwt, platform, platform/windows, redact, runner, scheduler, store, turns, integración). Cross-compila darwin/amd64 y darwin/arm64.
 - **Extensión**: 19 unitarias + 4 de integración en VS Code real.
+
+## 23. Estado tras la Fase 5 (PUBLICADO)
+
+Fecha: 2026-08-19.
+
+### Publicación hecha
+
+- **Repositorio**: https://github.com/TecniartGalicia/taskkeeper (público, MIT), monorepo Go + extensión.
+- **CI** (`ci.yml`): ubuntu/windows/macOS. Go build+test en las tres; `npm run check` en las tres; **integración solo en Windows** (única plataforma que se distribuye y donde el worker registra tareas reales); Linux compila el worker cruzado y empaqueta el VSIX win32-x64 como humo.
+- **Release** (`release.yml`) por tag `vX.Y.Z`: verifica tag en main = package.json, `go test`, `npm run check`, compila el worker win32-x64, empaqueta y **publica en Marketplace + Open VSX**, adjunta el VSIX a una release de GitHub. Reejecutable (salta lo ya publicado).
+- **v0.1.0 publicada en las tres**:
+  - VS Code Marketplace: `argalla.taskkeeper` 0.1.0 (win32-x64) — verificado con `vsce show`.
+  - Open VSX: `argalla.taskkeeper` 0.1.0@win32-x64 — `ovsx` confirmó «Published» (indexación de la API tarda unos minutos).
+  - GitHub release `v0.1.0` con `taskkeeper-v0.1.0-win32-x64.vsix` adjunto (6,74 MB).
+
+### Fallos de CI resueltos en el camino (auditoría entre fases)
+
+1. **El paquete `platform` no compilaba en Linux** (solo `//go:build windows|darwin`). → stub `platform_other.go` + `runner/vivo_other.go` con `//go:build !windows && !darwin`; el resto de la suite ya corre en los runners Linux.
+2. **`TestEscritoresConcurrentesEntreProcesos` daba `SQLITE_BUSY`** en el disco del runner de Windows. → `busy_timeout` 5→15 s y `synchronous(NORMAL)` en WAL.
+3. **Los tests de ciclo de vida del runner fallaban en Linux** (usan grupos de procesos y `ping -n`). → `//go:build windows || darwin`; se ejecutan en Windows y macOS.
+
+### Lo que queda en manos del usuario (no lo puede hacer el agente)
+
+- **Beta con usuarios externos** (Fase 4, la parte humana): instalar el VSIX en 5 equipos limpios de terceros y recoger fallos antes de quitar el flag `preview`.
+- **Firma de código del worker**: requiere certificado Authenticode (Windows) / Apple Developer ID (macOS) que no está disponible; sin él, SmartScreen puede avisar en el primer arranque. No bloquea el *preview*.
+- **`target` macOS**: el código cruza-compila; sale como paquete de plataforma propio cuando se verifique en hardware real (matar árbol de procesos, disparo de launchd, reintento por cuota).
+- **Redes / anuncio**: X, dev.to, HN, etc. (yo redacto; publica el humano).
