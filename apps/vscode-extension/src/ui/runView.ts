@@ -10,6 +10,26 @@ import { buildTranscript, type Transcript } from '../core/transcript';
 const t = vscode.l10n.t;
 
 let current: { panel: vscode.WebviewPanel; runId: string } | undefined;
+let ctx: vscode.ExtensionContext | undefined;
+const PENDING_KEY = 'taskkeeper.pendingConversation';
+
+/**
+ * Wires the extension context (for state that must survive a window reload) and,
+ * if a "open this conversation" request was left pending before a folder switch,
+ * completes it now that the right folder is (hopefully) open.
+ */
+export function initRunView(context: vscode.ExtensionContext): void {
+  ctx = context;
+  void resumePendingConversation();
+}
+
+async function resumePendingConversation(): Promise<void> {
+  const p = ctx?.globalState.get<{ session?: string; cwd?: string }>(PENDING_KEY);
+  if (!p?.session) return;
+  await ctx?.globalState.update(PENDING_KEY, undefined);
+  if (p.cwd && !enElWorkspace(p.cwd)) return; // the folder still isn't open; give up quietly
+  await openInClaudeConversation(p.session, p.cwd);
+}
 
 export async function openRunView(ctl: Ctl, runId: string): Promise<void> {
   if (current) {
@@ -68,11 +88,19 @@ export function refreshOpenRunView(ctl: Ctl): void {
   if (current) void push(ctl, current.panel, current.runId);
 }
 
-/** True if `cwd` is one of the currently open workspace folders (case/sep-insensitive). */
+/**
+ * True if `cwd` is one of the open workspace folders, or inside one. Normalizes
+ * separators (a CLI-created path may use '/', a VS Code fsPath uses '\\') and
+ * case, and accepts a subfolder of an open root so a monorepo doesn't get a
+ * spurious "open that folder" prompt.
+ */
 function enElWorkspace(cwd: string): boolean {
-  const norm = (p: string) => p.replace(/[\\/]+$/, '').toLowerCase();
+  const norm = (p: string) => p.replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLowerCase();
   const target = norm(cwd);
-  return (vscode.workspace.workspaceFolders ?? []).some((f) => norm(f.uri.fsPath) === target);
+  return (vscode.workspace.workspaceFolders ?? []).some((f) => {
+    const root = norm(f.uri.fsPath);
+    return target === root || target.startsWith(root + '/');
+  });
 }
 
 /**
@@ -99,6 +127,10 @@ async function openInClaudeConversation(session: string, cwd?: string): Promise<
       abrir,
     );
     if (answer === abrir) {
+      // Abrir la carpeta recarga la ventana (y destruye este panel), así que se
+      // deja la intención guardada: al reactivarse, initRunView la retoma y abre
+      // la conversación sin que haya que volver a pulsar.
+      await ctx?.globalState.update(PENDING_KEY, { session, cwd });
       await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(cwd), { forceNewWindow: false });
     }
     return;

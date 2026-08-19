@@ -9,7 +9,7 @@ import { BASE_SCHEME, BaseContentProvider, RUN_SCHEME, RunDetailsProvider, openF
 import { FileItem, HistoryProvider, InboxProvider, RunItem, TaskItem, TasksProvider, stateLabel } from './ui/trees';
 import { runNewTaskWizard } from './ui/wizard';
 import { openTaskPanel } from './ui/taskPanel';
-import { openRunView, refreshOpenRunView } from './ui/runView';
+import { openRunView, refreshOpenRunView, initRunView } from './ui/runView';
 
 const t = vscode.l10n.t;
 
@@ -22,6 +22,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   out = vscode.window.createOutputChannel('TaskKeeper');
   context.subscriptions.push(out);
   const log = (s: string) => out.appendLine(`${new Date().toISOString()} ${s}`);
+
+  // Lets the run view persist an "open this conversation" request across the
+  // window reload that opening its folder causes, and resume it here.
+  initRunView(context);
 
   // 1. Binaries: install to the stable folder and check the version matches.
   const version = (context.extension.packageJSON as { version: string }).version;

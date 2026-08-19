@@ -5,6 +5,12 @@
 
 
 
+
+## 0.3.3 — 2026-08-19
+
+- La vista de resultado muestra la **carpeta** donde corrió la ejecución.
+- **«Abrir en la conversación»** ahora, si esa carpeta no es la que tienes abierta en VS Code, te avisa y te ofrece **abrir la carpeta correcta** (y al recargar abre la conversación sola), en vez de una ventana de chat vacía. Recuerda: para continuar una conversación, el repositorio de la tarea debe ser la carpeta donde vive esa conversación.
+
 ## 0.3.2 — 2026-08-19
 
 - **«Abrir en la conversación».** Cuando una tarea corre «en la conversación» (modo directo continuando una conversación), Claude Code escribe todo el intercambio en el fichero de esa conversación. La vista de resultado añade un botón **«Abrir en la conversación»** que salta al chat nativo de Claude Code, para verlo y seguirlo como una interacción normal. La transcripción de TaskKeeper se conserva para revisar.
