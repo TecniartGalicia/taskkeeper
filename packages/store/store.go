@@ -46,9 +46,13 @@ func Open(path string) (*DB, error) {
 		return nil, err
 	}
 	// _txlock=immediate evita que dos escritores empiecen una transacción
-	// diferida y choquen al promocionarla.
-	dsn := "file:" + path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)" +
-		"&_pragma=foreign_keys(1)&_txlock=immediate"
+	// diferida y choquen al promocionarla. El busy_timeout es generoso a
+	// propósito: varios procesos (el worker de cada ejecución) escriben a la
+	// vez y en WAL solo hay un escritor; los demás esperan en vez de fallar.
+	// synchronous=NORMAL es seguro en WAL (no corrompe ante caída de la app) y
+	// recorta el fsync, que en discos lentos es lo que alarga el bloqueo.
+	dsn := "file:" + path + "?_pragma=busy_timeout(15000)&_pragma=journal_mode(WAL)" +
+		"&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(1)&_txlock=immediate"
 	sqlDB, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
