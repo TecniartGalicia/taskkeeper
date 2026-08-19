@@ -363,7 +363,7 @@
     "lint": "eslint src",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run compile-tests && mocha",
-    "test:integration": "npm run build && npm run compile-tests && node ./out/test/integration/runTest.js",
+    "test:integration": "npm run build:bin && npm run build && npm run compile-tests && node ./out/test/integration/runTest.js",
     "l10n": "node scripts/l10n-sync.mjs",
     "icon": "node scripts/make-icon.mjs",
     "package": "vsce package --no-dependencies --target win32-x64",
