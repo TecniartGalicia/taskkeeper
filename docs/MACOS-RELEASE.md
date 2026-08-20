@@ -7,11 +7,13 @@
 > - **6 secretos de GitHub** puestos en `TecniartGalicia/taskkeeper`: `APPLE_TEAM_ID`, `APPLE_API_ISSUER_ID`, `APPLE_API_KEY_ID`, `APPLE_API_KEY_P8_BASE64`, `APPLE_CERT_P12_BASE64`, `APPLE_CERT_PASSWORD`.
 > - **`release.yml` reescrito** en 3 jobs (verify → publish [matriz win32 + darwin firmado/notarizado] → release), idempotente por (versión,target).
 >
+> **macOS YA PUBLICADO desde v0.8.4** (Apple Silicon + Intel, firmado Developer ID, en Marketplace + Open VSX). `PUBLISH_MACOS=true` ya está puesto. **No se notariza**: con binarios sueltos la notaría de Apple se quedaba «In Progress» más allá del timeout del CI, así que la extensión quita `com.apple.quarantine` y da permiso de ejecución en `ensureInstalled` (binaries.ts) — Gatekeeper no bloquea binarios sin cuarentena, y la firma Developer ID prueba el origen.
+>
 > **Lo que queda (tú):**
-> 1. **Encender macOS** cuando quieras: crea la *variable* de repositorio `PUBLISH_MACOS=true` (Settings → Secrets and variables → Actions → Variables). Sin ella, el CI sigue publicando solo Windows; con ella, la próxima etiqueta firma, notariza y publica también las dos versiones de Mac.
-> 2. **Verificar en un Mac real** (una tarde): que launchd programa y despierta, y que el binario notarizado abre sin aviso (`spctl -a -vv -t install <binario>`).
-> 3. **Beta corta** y luego **quitar `"preview"`** (Parte E) para pasar a GA.
-> 4. Limpieza menor: revocar en App Store Connect la clave `taskkeeper-notary` (KFUNJZ544S) que quedó sin `.p8`.
+> 1. **Verificar en un Mac real** (una tarde): instalar la extensión, comprobar que launchd programa y despierta, y que el worker corre sin aviso.
+> 2. **Beta corta** y luego **quitar `"preview"`** (Parte E) para pasar a GA.
+> 3. *(Opcional)* Reactivar la **notarización** si Apple la exige en tu caso: reponer el paso `notarytool` (los secretos `APPLE_API_*` siguen puestos) y `--options runtime` en `codesign`; subir el timeout del job. Con .app/.dmg podrías además hacer `staple`.
+> 4. Limpieza menor: revocar en App Store Connect la clave muerta `taskkeeper-notary` (KFUNJZ544S) que quedó sin `.p8` (la buena es `tk-notary`, XD6MNP62WQ).
 >
 > Los ficheros sensibles (`.p12`, `.p8`, contraseña, `gh-secrets.txt`) están SOLO en `Documents/taskkeeper-signing/`, nunca en el repo. Haz una copia de seguridad de esa carpeta (si pierdes el `.p8` hay que crear otra clave; si pierdes el `.p12`/clave, otro certificado).
 
