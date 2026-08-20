@@ -32,23 +32,32 @@ export class FileItem extends vscode.TreeItem {
 }
 
 export class TaskItem extends vscode.TreeItem {
-  constructor(readonly task: Task) {
+  constructor(readonly task: Task, parentName?: string) {
     super(task.nombre, vscode.TreeItemCollapsibleState.None);
     this.id = `task:${task.id}`;
     this.contextValue = task.activa ? 'task.active' : 'task.paused';
-    this.iconPath = new vscode.ThemeIcon(task.activa ? 'calendar' : 'debug-pause', task.activa ? undefined : new vscode.ThemeColor('descriptionForeground'));
+    // §27.4 — una dependiente se dispara por otra tarea; icono y descripción lo
+    // reflejan en vez de un horario que no se registra.
+    const chained = !!task.depende_de;
+    this.iconPath = new vscode.ThemeIcon(
+      chained ? 'type-hierarchy-sub' : task.activa ? 'calendar' : 'debug-pause',
+      task.activa ? undefined : new vscode.ThemeColor('descriptionForeground'),
+    );
     const rule = describeRule(parseRule(task.regla), t);
+    const sched = chained ? t('after “{0}”', parentName ?? '…') : rule;
     this.description = task.activa
-      ? t('{0} · {1} · next {2}', task.agente, rule, task.proxima_local || '—')
-      : t('{0} · {1} · paused', task.agente, rule);
+      ? (chained ? `${task.agente} · ${sched}` : t('{0} · {1} · next {2}', task.agente, rule, task.proxima_local || '—'))
+      : t('{0} · {1} · paused', task.agente, sched);
     this.tooltip = new vscode.MarkdownString(
       [
         `**${task.nombre}** — ${task.proyecto}`,
         '',
         `- ${t('Agent')}: ${task.agente} · ${t('mode')}: ${task.modo}`,
-        `- ${t('Schedule')}: ${rule} (${task.zona})`,
+        chained
+          ? `- ${t('Runs after “{0}” ({1})', parentName ?? '…', task.disparar_en ?? 'success')}`
+          : `- ${t('Schedule')}: ${rule} (${task.zona})`,
         `- ${t('Permissions')}: ${task.perfil}`,
-        `- ${t('If missed')}: ${task.politica}`,
+        chained ? '' : `- ${t('If missed')}: ${task.politica}`,
         task.ultimo_estado ? `- ${t('Last run')}: ${task.ultimo_estado} (${shortTime(task.ultima_ejecucion)})` : '',
         '',
         '```',
@@ -217,6 +226,9 @@ export class TasksProvider implements vscode.TreeDataProvider<TaskItem | InfoIte
     } catch (e) {
       return [new InfoItem(t('Could not read the tasks: {0}', (e as Error).message), 'error')];
     }
-    return this.cache.map((tk) => new TaskItem(tk));
+    // §27.4 — badge de dependencia SIN anidar: se pasa el nombre del padre para
+    // que TaskItem muestre «tras «Padre»» en vez de un horario que no dispara.
+    const nombre = new Map(this.cache.map((tk) => [tk.id, tk.nombre]));
+    return this.cache.map((tk) => new TaskItem(tk, tk.depende_de ? nombre.get(tk.depende_de) : undefined));
   }
 }

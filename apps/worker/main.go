@@ -83,6 +83,11 @@ func main() {
 	o.RegistrarReintento = func(taskID string, cuando time.Time) error {
 		return platform.RegistrarReintento(cfg.Worker, taskID, cuando)
 	}
+	// §27.4 — encadenado: al terminar, lanza las tareas dependientes como una
+	// ejecución manual «ahora» (misma vía robusta que «Ejecutar ahora»).
+	o.LanzarDependiente = func(taskID string) error {
+		return platform.LanzarWorker(cfg.Worker, taskID, time.Now().UTC())
+	}
 	// El cupo es un ajuste de la máquina y vive en la base. Antes iba en la línea
 	// de órdenes de cada disparador, así que cambiarlo obligaba a reescribirlos
 	// todos.

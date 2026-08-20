@@ -29,6 +29,8 @@ export interface Task {
   sesion_externa?: string;
   autocompact?: string;
   workspace_mode?: string;
+  depende_de?: string; // §27.4 — id de la tarea padre; '' si no depende de ninguna
+  disparar_en?: string; // success | failure | always
   regla: string; // JSON of the scheduler rule
   zona: string;
   perfil: 'auditoria' | 'cambios_aislados' | string;

@@ -33,6 +33,9 @@ type Opciones struct {
 	// Registra en el sistema un disparador puntual para reintentar la tarea.
 	// Nil desactiva el reintento (pruebas, plataformas sin implementación).
 	RegistrarReintento func(taskID string, cuando time.Time) error
+	// Lanza (fire-and-forget) una tarea dependiente cuando la padre termina
+	// (§27.4). Nil desactiva el encadenado (pruebas, plataformas sin worker).
+	LanzarDependiente func(taskID string) error
 }
 
 func PorDefecto() Opciones {
@@ -144,6 +147,52 @@ func topeSuperado(db *store.DB, task *store.Task, ahora time.Time) string {
 	return ""
 }
 
+// esFallo dice si un estado terminal es un fallo «real» (no cuota, que reintenta).
+func esFallo(s store.State) bool {
+	switch s {
+	case store.StateFailed, store.StateFailedVerif, store.StateFailedAuth:
+		return true
+	}
+	return false
+}
+
+// dispararDependientes lanza (fire-and-forget) las tareas que dependen de padreID
+// según su estado terminal. `completed` (éxito directo) → dependientes 'success';
+// fallos reales → 'failure'; `failed_quota` no dispara (tiene reintento); el resto
+// (skipped/cancelled/awaiting_review) no encadena — lo que deja los padres AISLADOS
+// fuera de v1 (su éxito = «aceptar», que llegará por `ctl aceptar` más adelante).
+func dispararDependientes(db *store.DB, o Opciones, padreID string, estado store.State) {
+	if o.LanzarDependiente == nil {
+		return
+	}
+	var res string
+	switch {
+	case estado == store.StateCompleted:
+		res = "success"
+	case estado == store.StateFailedQuota:
+		return
+	case esFallo(estado):
+		res = "failure"
+	default:
+		return
+	}
+	deps, err := db.DependientesDe(padreID, res)
+	if err != nil {
+		return
+	}
+	for _, dep := range deps {
+		// Deja constancia del vínculo causal (padre→hija) y del resultado del
+		// lanzamiento: si el worker no arranca, la cadena se rompe con rastro.
+		if err := o.LanzarDependiente(dep.ID); err != nil {
+			db.Audit("", padreID, "system", "dependent_dispatch_failed",
+				fmt.Sprintf(`{"hija":%q,"resultado":%q,"error":%q}`, dep.ID, res, err.Error()))
+		} else {
+			db.Audit("", padreID, "system", "dependent_dispatched",
+				fmt.Sprintf(`{"hija":%q,"resultado":%q}`, dep.ID, res))
+		}
+	}
+}
+
 // Ejecutar procesa una ocurrencia concreta. Lo usa EjecutarProgramada con la
 // hora derivada, y el arranque manual con el instante actual: así una prueba a
 // mano no consume la ocurrencia programada de esta noche.
@@ -173,6 +222,16 @@ func Ejecutar(ctx context.Context, db *store.DB, d Deps, o Opciones,
 	if !creada {
 		return nil
 	}
+
+	// §27.4 — al terminar (por cualquier camino), dispara las tareas que dependen
+	// de esta según su resultado. Va por defer porque `Ejecutar` tiene muchos
+	// `return nil` tempranos: el éxito directo (`completed`) retorna antes del final,
+	// y una llamada única al cierre se los perdería. Solo dispara con `run` creada.
+	defer func() {
+		if r, e := db.GetRun(run.ID); e == nil {
+			dispararDependientes(db, o, task.ID, r.Status)
+		}
+	}()
 
 	// 1b. Topes de gasto (§27.2). Se comprueban aquí, en `queued`, ANTES de tomar
 	//     turno o crear worktree: un salto por tope no debe consumir recursos. La

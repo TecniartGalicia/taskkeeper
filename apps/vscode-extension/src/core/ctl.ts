@@ -183,6 +183,8 @@ export interface CreateParams {
   presupuestoDiario?: number;
   autocompact?: string;
   workspace?: string;
+  dependeDe?: string; // §27.4 — id de la tarea padre ('' para quitar la dependencia)
+  dispararEn?: string; // success | failure | always
 }
 
 /** Builds the argument list; exported for the unit test. Never a shell string. */
@@ -213,5 +215,9 @@ export function createArgs(p: Partial<CreateParams>): string[] {
   // editar); solo se omite cuando el llamante no lo gestiona (undefined).
   if (p.autocompact !== undefined) a.push('--autocompact', p.autocompact);
   put('--workspace', p.workspace);
+  // §27.4 — se envían aunque sean cadena vacía (como autocompact), para poder
+  // QUITAR la dependencia al editar; solo se omiten si el llamante no los gestiona.
+  if (p.dependeDe !== undefined) a.push('--depende-de', p.dependeDe);
+  if (p.dispararEn !== undefined) a.push('--disparar-en', p.dispararEn);
   return a;
 }

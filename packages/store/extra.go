@@ -62,10 +62,12 @@ func (db *DB) UpdateTask(t Task, prompt string) error {
 	now := Now()
 	if _, err := tx.Exec(`UPDATE tasks SET name=?, agent=?, conversation_mode=?, session_ref_id=?,
 		schedule_rule=?, timezone=?, misfire_policy=?, max_lateness_seconds=?, permission_profile=?,
-		timeout_seconds=?, max_budget_usd=?, daily_budget_usd=?, autocompact=?, workspace_mode=?, updated_at=? WHERE id=?`,
+		timeout_seconds=?, max_budget_usd=?, daily_budget_usd=?, autocompact=?, workspace_mode=?,
+		depends_on_task_id=?, trigger_on=?, updated_at=? WHERE id=?`,
 		t.Name, t.Agent, t.ConversationMode, t.SessionRefID, t.ScheduleRule, t.Timezone,
 		t.MisfirePolicy, maxOr(t.MaxLatenessSeconds, 7200), t.PermissionProfile, t.TimeoutSeconds,
-		t.MaxBudgetUSD, t.DailyBudgetUSD, t.Autocompact, defaultStr(t.WorkspaceMode, "isolated"), now, t.ID); err != nil {
+		t.MaxBudgetUSD, t.DailyBudgetUSD, t.Autocompact, defaultStr(t.WorkspaceMode, "isolated"),
+		t.DependsOnTaskID, t.TriggerOn, now, t.ID); err != nil {
 		return err
 	}
 	var actual string
@@ -329,7 +331,10 @@ func (db *DB) SaludBase(desdeUTC string) ([]SaludBaseTarea, error) {
 	// 1) tareas activas (ids + nombres); se cierra el cursor antes de más consultas
 	//    (una sola conexión: consultar dentro del recorrido bloquearía).
 	type tn struct{ id, name string }
-	rows, err := db.Query(`SELECT id, name FROM tasks WHERE enabled=1 ORDER BY created_at`)
+	// Excluye las dependientes (§27.4): están activas pero sin disparador del SO por
+	// diseño, así que no deben salir como «disparador ausente» en la salud.
+	rows, err := db.Query(`SELECT id, name FROM tasks
+		WHERE enabled=1 AND depends_on_task_id='' ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -367,6 +372,52 @@ func (db *DB) SaludBase(desdeUTC string) ([]SaludBaseTarea, error) {
 			DisparosPerdidos: perdidos[t.id], Pendientes: pend[t.id]})
 	}
 	return out, nil
+}
+
+// ---------- encadenado (§27.4) ----------
+
+// DependientesDe devuelve las tareas ACTIVAS que dependen de taskID y cuyo disparo
+// casa con el resultado ('success'|'failure'); 'always' casa con cualquiera. Sigue
+// el patrón de ListTasks: recoge ids con el cursor y luego carga cada tarea (una
+// sola conexión).
+func (db *DB) DependientesDe(taskID, resultado string) ([]*Task, error) {
+	rows, err := db.Query(`SELECT id FROM tasks
+		WHERE enabled=1 AND depends_on_task_id=? AND (trigger_on=? OR trigger_on='always')
+		ORDER BY created_at`, taskID, resultado)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]*Task, 0, len(ids))
+	for _, id := range ids {
+		t, err := db.GetTask(id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, nil
+}
+
+// CuentaDependientes dice cuántas tareas dependen de taskID (§27.4). Borrar un
+// padre con dependientes las dejaría huérfanas (sin disparador y sin quien las
+// dispare), así que se bloquea en la capa de órdenes.
+func (db *DB) CuentaDependientes(taskID string) (int, error) {
+	var n int
+	err := db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE depends_on_task_id=?`, taskID).Scan(&n)
+	return n, err
 }
 
 // ---------- gasto (§27.2) ----------

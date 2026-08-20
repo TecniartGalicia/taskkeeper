@@ -254,6 +254,7 @@ func uso() {
             [--perfil auditoria|cambios_aislados] [--modo new|resume|fork]
             [--sesion <id>] [--politica skip|run_if_late|manual] [--retraso-max <seg>]
             [--timeout <seg>] [--presupuesto <usd>] [--presupuesto-diario <usd>]
+            [--depende-de <id-tarea> --disparar-en success|failure|always]
   editar    <id-tarea> [las mismas opciones que crear]
   listar
   tarea     <id-tarea>
@@ -282,6 +283,7 @@ func uso() {
 type opcionesTarea struct {
 	proyecto, nombre, agente, prompt, regla, hora, dias, zona, perfil, rama string
 	modo, sesion, politica, autocompact, workspace                          string
+	dependeDe, dispararEn                                                   string // §27.4
 	retrasoMax, timeout                                                     int
 	presupuesto, presupuestoDiario                                          float64
 }
@@ -351,8 +353,55 @@ func parsearOpciones(nombre string, args []string, base *store.Task, promptBase 
 	fs.IntVar(&o.timeout, "timeout", dTimeout, "segundos máximos por ejecución")
 	fs.Float64Var(&o.presupuesto, "presupuesto", dPres, "USD máximos por ejecución (0 = sin tope)")
 	fs.Float64Var(&o.presupuestoDiario, "presupuesto-diario", dPresDia, "USD máximos al día para esta tarea")
+	dDepende, dDisparar := "", ""
+	if base != nil {
+		dDepende, dDisparar = base.DependsOnTaskID, base.TriggerOn
+	}
+	fs.StringVar(&o.dependeDe, "depende-de", dDepende, "id de la tarea padre: esta se ejecuta tras ella (§27.4)")
+	fs.StringVar(&o.dispararEn, "disparar-en", dDisparar, "success | failure | always (con --depende-de)")
 	fs.Parse(args)
 	return o, fs
+}
+
+// validarDependencia comprueba la tarea padre y que no se forme un ciclo. editandoID
+// es "" al crear (la tarea nueva no tiene hijos, así que no puede cerrar ciclo).
+func validarDependencia(db *store.DB, o *opcionesTarea, editandoID string) error {
+	if o.dependeDe == "" {
+		o.dispararEn = ""
+		return nil
+	}
+	if o.dispararEn == "" {
+		o.dispararEn = "success"
+	}
+	if o.dispararEn != "success" && o.dispararEn != "failure" && o.dispararEn != "always" {
+		return fmt.Errorf("--disparar-en debe ser success, failure o always")
+	}
+	if o.dependeDe == editandoID {
+		return fmt.Errorf("una tarea no puede depender de sí misma")
+	}
+	if _, err := db.GetTask(o.dependeDe); err != nil {
+		return fmt.Errorf("la tarea padre %s no existe", o.dependeDe)
+	}
+	// Ciclo: subiendo de padre en padre desde dependeDe, no debe reaparecer
+	// editandoID. Un conjunto de visitados detecta ciclos de cualquier longitud y
+	// evita el bucle infinito si ya hubiera uno preexistente.
+	visto := map[string]bool{}
+	cur := o.dependeDe
+	for cur != "" {
+		if cur == editandoID {
+			return fmt.Errorf("la dependencia formaría un ciclo")
+		}
+		if visto[cur] {
+			return fmt.Errorf("la cadena de dependencias contiene un ciclo")
+		}
+		visto[cur] = true
+		p, err := db.GetTask(cur)
+		if err != nil {
+			break
+		}
+		cur = p.DependsOnTaskID
+	}
+	return nil
 }
 
 func crear(out salida, db *store.DB, cfg config.Config, args []string) {
@@ -369,6 +418,9 @@ func crear(out salida, db *store.DB, cfg config.Config, args []string) {
 	}
 	if o.workspace != "isolated" && o.workspace != "direct" {
 		out.fallo(fmt.Errorf("--workspace debe ser isolated o direct"))
+	}
+	if err := validarDependencia(db, &o, ""); err != nil {
+		out.fallo(err)
 	}
 
 	ctx := context.Background()
@@ -417,20 +469,26 @@ func crear(out salida, db *store.DB, cfg config.Config, args []string) {
 		ScheduleRule: string(reglaJSON), Timezone: o.zona,
 		MisfirePolicy: o.politica, MaxLatenessSeconds: o.retrasoMax,
 		PermissionProfile: o.perfil, TimeoutSeconds: o.timeout,
-		MaxBudgetUSD:   store.NullFloat(o.presupuesto),
-		DailyBudgetUSD: store.NullFloat(o.presupuestoDiario),
-		Autocompact:    o.autocompact,
-		WorkspaceMode:  o.workspace,
+		MaxBudgetUSD:    store.NullFloat(o.presupuesto),
+		DailyBudgetUSD:  store.NullFloat(o.presupuestoDiario),
+		Autocompact:     o.autocompact,
+		WorkspaceMode:   o.workspace,
+		DependsOnTaskID: o.dependeDe,
+		TriggerOn:       o.dispararEn,
 	}, o.prompt)
 	if err != nil {
 		out.fallo(err)
 	}
 
-	if err := registrar(cfg, task.ID, o.zona, regla, occ); err != nil {
-		db.DeleteTask(task.ID) // no dejar una tarea sin disparador
-		out.fallo(fmt.Errorf("registrando el disparador: %w", err))
+	// Una tarea dependiente (§27.4) se dispara por su padre, no por horario: no se
+	// registra disparador del SO ni se le asigna os_trigger_id.
+	if o.dependeDe == "" {
+		if err := registrar(cfg, task.ID, o.zona, regla, occ); err != nil {
+			db.DeleteTask(task.ID) // no dejar una tarea sin disparador
+			out.fallo(fmt.Errorf("registrando el disparador: %w", err))
+		}
+		db.SetOSTriggerID(task.ID, platform.NombreDeTarea(task.ID))
 	}
-	db.SetOSTriggerID(task.ID, platform.NombreDeTarea(task.ID))
 	if a := platform.AvisoReactivacion(); a != "" {
 		avisos = append(avisos, a)
 	}
@@ -438,13 +496,20 @@ func crear(out salida, db *store.DB, cfg config.Config, args []string) {
 		avisos = []string{}
 	}
 
+	// Una dependiente no se ejecuta por horario: no se anuncia «próxima ejecución».
+	nextUTC, nextLocal := occ.ScheduledForUTC.Format(time.RFC3339), occ.ResolvedLocal
+	if o.dependeDe != "" {
+		nextUTC, nextLocal = "", ""
+	}
 	res := map[string]any{
-		"id": task.ID, "next_run_utc": occ.ScheduledForUTC.Format(time.RFC3339),
-		"next_run_local": occ.ResolvedLocal, "avisos": avisos,
+		"id": task.ID, "next_run_utc": nextUTC, "next_run_local": nextLocal, "avisos": avisos,
 	}
 	out.ok(res, func() {
-		fmt.Printf("tarea creada: %s\npróxima ejecución: %s (%s local)\n",
-			task.ID, occ.ScheduledForUTC.Format(time.RFC3339), occ.ResolvedLocal)
+		if o.dependeDe != "" {
+			fmt.Printf("tarea creada: %s\nse ejecuta tras la tarea %s\n", task.ID, o.dependeDe)
+		} else {
+			fmt.Printf("tarea creada: %s\npróxima ejecución: %s (%s local)\n", task.ID, nextUTC, nextLocal)
+		}
 		for _, a := range avisos {
 			fmt.Fprintln(os.Stderr, "aviso:", a)
 		}
@@ -467,6 +532,9 @@ func editar(out salida, db *store.DB, cfg config.Config, args []string) {
 	o, _ := parsearOpciones("editar", args[1:], base, rev.Prompt)
 	if o.workspace != "isolated" && o.workspace != "direct" {
 		out.fallo(fmt.Errorf("--workspace debe ser isolated o direct"))
+	}
+	if err := validarDependencia(db, &o, id); err != nil {
+		out.fallo(err)
 	}
 	// Pasar a modo aislado exige un repositorio Git válido: se comprueba AQUÍ para
 	// fallar al editar y no a la hora de ejecutar (una tarea directa pudo crearse
@@ -494,6 +562,8 @@ func editar(out salida, db *store.DB, cfg config.Config, args []string) {
 	nueva.DailyBudgetUSD = store.NullFloat(o.presupuestoDiario)
 	nueva.Autocompact = o.autocompact
 	nueva.WorkspaceMode = o.workspace
+	nueva.DependsOnTaskID = o.dependeDe
+	nueva.TriggerOn = o.dispararEn
 	if o.sesion != "" {
 		sid, err := db.UpsertSessionRef(o.agente, o.sesion, base.ProjectID)
 		if err != nil {
@@ -505,10 +575,16 @@ func editar(out salida, db *store.DB, cfg config.Config, args []string) {
 	if err := db.UpdateTask(nueva, o.prompt); err != nil {
 		out.fallo(err)
 	}
-	if base.Enabled {
+	if o.dependeDe != "" {
+		// Pasa a dependiente: se dispara por su padre, no por horario. Retira un
+		// disparador anterior (si lo tuviera) y limpia el os_trigger_id.
+		platform.RetirarTarea(id)
+		db.SetOSTriggerID(id, "")
+	} else if base.Enabled {
 		if err := registrar(cfg, id, o.zona, regla, occ); err != nil {
 			out.fallo(fmt.Errorf("actualizando el disparador: %w", err))
 		}
+		db.SetOSTriggerID(id, platform.NombreDeTarea(id))
 	}
 	if avisos == nil {
 		avisos = []string{}
@@ -643,6 +719,8 @@ type tareaJSON struct {
 	SesionExterna        string   `json:"sesion_externa"`
 	Autocompact          string   `json:"autocompact"`
 	WorkspaceMode        string   `json:"workspace_mode"`
+	DependeDe            string   `json:"depende_de"`
+	DispararEn           string   `json:"disparar_en"`
 	Regla                string   `json:"regla"`
 	Zona                 string   `json:"zona"`
 	Perfil               string   `json:"perfil"`
@@ -664,7 +742,8 @@ func aJSON(db *store.DB, t *store.Task) tareaJSON {
 		Modo: t.ConversationMode, Regla: t.ScheduleRule, Zona: t.Timezone,
 		Perfil: t.PermissionProfile, Politica: t.MisfirePolicy, Autocompact: t.Autocompact,
 		WorkspaceMode: defaultStr2(t.WorkspaceMode),
-		TimeoutSeg:    t.TimeoutSeconds, RetrasoMaxSeg: t.MaxLatenessSeconds,
+		DependeDe:     t.DependsOnTaskID, DispararEn: t.TriggerOn,
+		TimeoutSeg: t.TimeoutSeconds, RetrasoMaxSeg: t.MaxLatenessSeconds,
 	}
 	if p, err := db.GetProject(t.ProjectID); err == nil {
 		j.Proyecto, j.RutaProyecto = p.Name, p.WorkspacePath
@@ -682,8 +761,10 @@ func aJSON(db *store.DB, t *store.Task) tareaJSON {
 		v := t.DailyBudgetUSD.Float64
 		j.PresupuestoDiarioUSD = &v
 	}
+	// Una tarea dependiente (§27.4) no tiene disparador propio, así que no hay
+	// «próxima ejecución» por horario: se dispara por su padre.
 	var r scheduler.Rule
-	if json.Unmarshal([]byte(t.ScheduleRule), &r) == nil && t.Enabled {
+	if json.Unmarshal([]byte(t.ScheduleRule), &r) == nil && t.Enabled && t.DependsOnTaskID == "" {
 		if occ, err := scheduler.Next(r, t.Timezone, time.Now().UTC()); err == nil && occ != nil {
 			j.ProximaUTC, j.ProximaLocal = occ.ScheduledForUTC.Format(time.RFC3339), occ.ResolvedLocal
 		}
@@ -735,6 +816,12 @@ func tarea(out salida, db *store.DB, args []string) {
 
 func borrar(out salida, db *store.DB, args []string) {
 	id := arg(out, args, 0)
+	// §27.4 — no borrar un padre con dependientes: quedarían muertas (sin disparador
+	// y sin quien las dispare). Se bloquea con un mensaje claro (como las rutinas con
+	// días asignados). El usuario debe quitarles la dependencia primero.
+	if n, err := db.CuentaDependientes(id); err == nil && n > 0 {
+		out.fallo(fmt.Errorf("%d tarea(s) dependen de esta; quítales la dependencia antes de borrarla", n))
+	}
 	if err := platform.RetirarTarea(id); err != nil && !out.json {
 		fmt.Fprintln(os.Stderr, "aviso al retirar el disparador:", err)
 	}
@@ -751,8 +838,10 @@ func activar(out salida, db *store.DB, cfg config.Config, args []string, activa 
 		out.fallo(err)
 	}
 	// El disparador acompaña al estado: pausada = sin disparador. Así una tarea
-	// pausada no despierta el equipo para nada.
-	if activa {
+	// pausada no despierta el equipo para nada. Una tarea dependiente (§27.4) nunca
+	// tiene disparador propio: se dispara por su padre, así que reanudarla no
+	// registra nada.
+	if activa && t.DependsOnTaskID == "" {
 		var r scheduler.Rule
 		json.Unmarshal([]byte(t.ScheduleRule), &r)
 		occ, err := scheduler.Next(r, t.Timezone, time.Now().UTC())
@@ -762,7 +851,7 @@ func activar(out salida, db *store.DB, cfg config.Config, args []string, activa 
 		if err := registrar(cfg, id, t.Timezone, r, occ); err != nil {
 			out.fallo(err)
 		}
-	} else {
+	} else if !activa {
 		platform.RetirarTarea(id)
 	}
 	if err := db.SetEnabled(id, activa); err != nil {

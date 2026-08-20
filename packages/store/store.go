@@ -78,6 +78,9 @@ func (db *DB) migrar() error {
 		"max_lateness_seconds": "INTEGER NOT NULL DEFAULT 7200",
 		"autocompact":          "TEXT NOT NULL DEFAULT ''",
 		"workspace_mode":       "TEXT NOT NULL DEFAULT 'isolated'",
+		// §27.4 — encadenado: la tarea se dispara tras otra, no por horario.
+		"depends_on_task_id": "TEXT NOT NULL DEFAULT ''",
+		"trigger_on":         "TEXT NOT NULL DEFAULT ''", // success | failure | always
 	}
 	filas, err := db.Query(`PRAGMA table_info(tasks)`)
 	if err != nil {
@@ -230,6 +233,10 @@ type Task struct {
 	// WorkspaceMode: "isolated" (worktree + revisión, por defecto) o "direct"
 	// (sin worktree, en el repo real, sin revisión — «en la conversación»).
 	WorkspaceMode string
+	// DependsOnTaskID: si != "", esta tarea se dispara tras otra (§27.4), no por
+	// horario. TriggerOn: success | failure | always. Vacío = tarea normal.
+	DependsOnTaskID string
+	TriggerOn       string
 }
 
 type Revision struct {
@@ -254,12 +261,14 @@ func (db *DB) CreateTask(t Task, prompt string) (*Task, *Revision, error) {
 	if _, err := tx.Exec(`INSERT INTO tasks
 		(id,name,project_id,agent,enabled,conversation_mode,session_ref_id,schedule_rule,
 		 timezone,next_run_at_utc,misfire_policy,max_lateness_seconds,permission_profile,
-		 timeout_seconds,max_budget_usd,daily_budget_usd,os_trigger_id,autocompact,workspace_mode,created_at,updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		 timeout_seconds,max_budget_usd,daily_budget_usd,os_trigger_id,autocompact,workspace_mode,
+		 depends_on_task_id,trigger_on,created_at,updated_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Name, t.ProjectID, t.Agent, boolToInt(t.Enabled), t.ConversationMode,
 		t.SessionRefID, t.ScheduleRule, t.Timezone, t.NextRunAtUTC, t.MisfirePolicy,
 		maxOr(t.MaxLatenessSeconds, 7200), t.PermissionProfile, t.TimeoutSeconds,
-		t.MaxBudgetUSD, t.DailyBudgetUSD, t.OSTriggerID, t.Autocompact, defaultStr(t.WorkspaceMode, "isolated"), now, now); err != nil {
+		t.MaxBudgetUSD, t.DailyBudgetUSD, t.OSTriggerID, t.Autocompact, defaultStr(t.WorkspaceMode, "isolated"),
+		t.DependsOnTaskID, t.TriggerOn, now, now); err != nil {
 		return nil, nil, err
 	}
 
@@ -285,11 +294,13 @@ func (db *DB) GetTask(id string) (*Task, error) {
 	var enabled int
 	err := db.QueryRow(`SELECT id,name,project_id,agent,enabled,conversation_mode,session_ref_id,
 		schedule_rule,timezone,next_run_at_utc,misfire_policy,max_lateness_seconds,
-		permission_profile,timeout_seconds,max_budget_usd,daily_budget_usd,os_trigger_id,autocompact,workspace_mode
+		permission_profile,timeout_seconds,max_budget_usd,daily_budget_usd,os_trigger_id,autocompact,workspace_mode,
+		depends_on_task_id,trigger_on
 		FROM tasks WHERE id=?`, id).
 		Scan(&t.ID, &t.Name, &t.ProjectID, &t.Agent, &enabled, &t.ConversationMode, &t.SessionRefID,
 			&t.ScheduleRule, &t.Timezone, &t.NextRunAtUTC, &t.MisfirePolicy, &t.MaxLatenessSeconds,
-			&t.PermissionProfile, &t.TimeoutSeconds, &t.MaxBudgetUSD, &t.DailyBudgetUSD, &t.OSTriggerID, &t.Autocompact, &t.WorkspaceMode)
+			&t.PermissionProfile, &t.TimeoutSeconds, &t.MaxBudgetUSD, &t.DailyBudgetUSD, &t.OSTriggerID, &t.Autocompact, &t.WorkspaceMode,
+			&t.DependsOnTaskID, &t.TriggerOn)
 	if err != nil {
 		return nil, err
 	}

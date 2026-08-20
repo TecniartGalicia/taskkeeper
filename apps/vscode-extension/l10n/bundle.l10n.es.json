@@ -283,5 +283,17 @@
   "Run the project's linter and formatter. Fix only the safe, mechanical issues (formatting, imports, obvious lint rules). Do not change logic. Run the tests to confirm nothing broke, and leave the changes in this worktree for review.": "Ejecuta el linter y el formateador del proyecto. Corrige solo lo seguro y mecánico (formato, imports, reglas de lint obvias). No cambies la lógica. Ejecuta los tests para confirmar que nada se rompió y deja los cambios en este worktree para revisar.",
   "Fix failing tests": "Arreglar tests que fallan",
   "Daily: if the suite is red, fix it in a worktree for review.": "Diario: si la batería está en rojo, arréglala en un worktree para revisar.",
-  "Run the test suite. If everything passes, stop and say so. If anything fails, investigate the cause and fix it in this worktree, keeping changes minimal. Do not delete or skip tests to make them pass. Summarise what failed and how you fixed it.": "Ejecuta la batería de tests. Si todo pasa, para y dilo. Si algo falla, investiga la causa y arréglalo en este worktree, con cambios mínimos. No borres ni saltes tests para que pasen. Resume qué falló y cómo lo arreglaste."
+  "Run the test suite. If everything passes, stop and say so. If anything fails, investigate the cause and fix it in this worktree, keeping changes minimal. Do not delete or skip tests to make them pass. Summarise what failed and how you fixed it.": "Ejecuta la batería de tests. Si todo pasa, para y dilo. Si algo falla, investiga la causa y arréglalo en este worktree, con cambios mínimos. No borres ni saltes tests para que pasen. Resume qué falló y cómo lo arreglaste.",
+  "Runs after another task": "Se ejecuta tras otra tarea",
+  "On its own schedule": "Con su propio horario",
+  "When the other task…": "Cuando la otra tarea…",
+  "succeeds": "termina bien",
+  "fails": "falla",
+  "finishes (either way)": "termina (de cualquier modo)",
+  "No schedule of its own: it runs when the task above finishes.": "Sin horario propio: se ejecuta cuando la tarea de arriba termina.",
+  "“Succeeds” chaining needs the parent to run in the conversation (direct); an isolated parent chains on failure only for now.": "El encadenado por «termina bien» necesita que la tarea padre corra en la conversación (directo); una tarea padre aislada encadena solo en fallo por ahora.",
+  "after “{0}”": "tras «{0}»",
+  "Runs after “{0}” ({1})": "Se ejecuta tras «{0}» ({1})",
+  "Task updated. It runs after another task.": "Tarea actualizada. Se ejecuta tras otra tarea.",
+  "Task created. It runs after another task.": "Tarea creada. Se ejecuta tras otra tarea."
 }

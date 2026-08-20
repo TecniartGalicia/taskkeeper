@@ -40,6 +40,8 @@ interface SubmitPayload {
   presupuesto?: number;
   autocompact?: string;
   workspace?: string; // 'isolated' | 'direct'
+  dependeDe?: string; // §27.4
+  dispararEn?: string;
   runNow: boolean;
 }
 
@@ -78,7 +80,17 @@ export async function openTaskPanel(
   panel.webview.onDidReceiveMessage(async (msg: { type: string; [k: string]: unknown }) => {
     try {
       switch (msg.type) {
-        case 'ready':
+        case 'ready': {
+          // §27.4 — lista de tareas para elegir la padre (excluye la propia al
+          // editar). Solo id+nombre; ligera.
+          let tareas: { id: string; nombre: string; directo: boolean }[] = [];
+          try {
+            tareas = (await ctl.tasks())
+              .filter((x) => !editing || x.id !== (existing as Task).id)
+              // `directo`: el encadenado por «éxito» solo funciona si el padre corre
+              // en la conversación (directo); si es aislado, se avisa (§27.4 v1).
+              .map((x) => ({ id: x.id, nombre: x.nombre, directo: x.workspace_mode === 'direct' }));
+          } catch { /* sin tareas: el selector de dependencia quedará vacío */ }
           panel.webview.postMessage({
             type: 'init',
             editing,
@@ -88,9 +100,11 @@ export async function openTaskPanel(
             promptTemplate: PROMPT_TEMPLATE,
             // §27.3 — plantillas resueltas AQUÍ (host), con el bundle l10n cargado.
             plantillas: editing ? [] : plantillas(),
+            tareas,
             task: editing ? taskToForm(existing as Task) : undefined,
           });
           break;
+        }
         case 'browseRepo': {
           const sel = await vscode.window.showOpenDialog({
             canSelectFolders: true, canSelectFiles: false, canSelectMany: false,
@@ -154,16 +168,20 @@ export async function openTaskPanel(
           if (editing) {
             const res = await ctl.edit((existing as Task).id, params);
             for (const a of res.avisos) vscode.window.showWarningMessage(t('TaskKeeper: {0}', a));
-            vscode.window.showInformationMessage(t('Task updated. Next run: {0}.', res.next_run_local));
+            // next_run_local vacío = tarea dependiente (§27.4): sin horario propio.
+            vscode.window.showInformationMessage(res.next_run_local
+              ? t('Task updated. Next run: {0}.', res.next_run_local)
+              : t('Task updated. It runs after another task.'));
           } else {
             const created = await ctl.create(params);
             for (const a of created.avisos) vscode.window.showWarningMessage(t('TaskKeeper: {0}', a));
-            if (p.runNow) {
-              await ctl.runNow(created.id);
-              vscode.window.showInformationMessage(t('Task created and launched. Next scheduled run: {0}. Watch the "Last night" view.', created.next_run_local));
-            } else {
-              vscode.window.showInformationMessage(t('Task created. Next run: {0}.', created.next_run_local));
-            }
+            if (p.runNow) await ctl.runNow(created.id);
+            const msg = !created.next_run_local
+              ? t('Task created. It runs after another task.')
+              : p.runNow
+                ? t('Task created and launched. Next scheduled run: {0}. Watch the "Last night" view.', created.next_run_local)
+                : t('Task created. Next run: {0}.', created.next_run_local);
+            vscode.window.showInformationMessage(msg);
           }
           panel.dispose();
           await vscode.commands.executeCommand('taskkeeper.refresh');
@@ -199,6 +217,8 @@ function toCreateParams(p: SubmitPayload): CreateParams {
     presupuesto: p.presupuesto,
     autocompact: p.autocompact,
     workspace: p.workspace,
+    dependeDe: p.dependeDe,
+    dispararEn: p.dispararEn,
   };
 }
 
@@ -220,6 +240,8 @@ function taskToForm(task: Task): Record<string, unknown> {
     modo: task.modo ?? 'new',
     sesion: task.sesion_externa ?? '',
     politica: task.politica ?? 'skip',
+    dependeDe: task.depende_de ?? '',
+    dispararEn: task.disparar_en || 'success',
     presupuesto: task.presupuesto_usd ?? undefined,
     autocompact: task.autocompact ?? '',
     workspace: task.workspace_mode ?? 'isolated',
@@ -276,6 +298,14 @@ function strings(): Record<string, string> {
     ws_direct_changes: t('Direct changes'),
     ws_direct_warn: t('Writes directly in your working copy, without a review step.'),
     prompt: t('Instruction (prompt)'),
+    runs_after: t('Runs after another task'),
+    dep_none: t('On its own schedule'),
+    dep_when: t('When the other task…'),
+    dep_success: t('succeeds'),
+    dep_failure: t('fails'),
+    dep_always: t('finishes (either way)'),
+    dep_note: t('No schedule of its own: it runs when the task above finishes.'),
+    dep_only_direct: t('“Succeeds” chaining needs the parent to run in the conversation (direct); an isolated parent chains on failure only for now.'),
     schedule: t('Schedule'),
     every_day: t('Every day'),
     some_days: t('Some days'),
@@ -403,7 +433,7 @@ let INIT=null, state={
   proyecto:'',proyectoNombre:'',isGit:true,nombre:'',agente:'',prompt:'',
   regla:'daily',horas:['03:00'],dias:[1],zona:'',perfil:'cambios_aislados',
   modo:'new',sesion:'',politica:'skip',presupuesto:'',autocompact:'',workspace:'isolated',editing:false,
-  sessFolders:[],preset:'isolated',plantilla:''
+  sessFolders:[],preset:'isolated',plantilla:'',dependeDe:'',dispararEn:'success'
 };
 let previewTimer=null, resolveTimer=null;
 
@@ -495,6 +525,7 @@ function render(){
   }
 
   const adv = state.preset==='advanced';
+  const esDependiente = !!state.dependeDe; // §27.4: se dispara por otra tarea, sin horario propio
 
   // Intención: dos atajos que fijan los dos ejes por el usuario. El resto del
   // formulario (repo/conversación/dónde-trabaja) se muestra según el atajo, y
@@ -642,7 +673,32 @@ function render(){
   const ta=el('textarea',{value:state.prompt}); ta.addEventListener('input',()=>{state.prompt=ta.value;});
   main.append(field(S.prompt, ta));
 
-  // Schedule
+  // §27.4 — «Se ejecuta después de otra tarea». En avanzado, o si ya es dependiente.
+  if((adv || esDependiente) && (INIT.tareas||[]).length){
+    const depWrap=el('div',{});
+    const sel=el('select');
+    sel.append(el('option',{value:''}, S.dep_none));
+    (INIT.tareas||[]).forEach(tk=>{ const o=el('option',{value:tk.id}, tk.nombre); if(tk.id===state.dependeDe)o.selected=true; sel.append(o); });
+    sel.addEventListener('change',()=>{ state.dependeDe=sel.value; if(!state.dependeDe)state.dispararEn='success'; render(); updateSummary(); });
+    depWrap.append(sel);
+    if(esDependiente){
+      const whenRow=el('div',{className:'row',style:'margin-top:9px'});
+      whenRow.append(el('span',{style:'font-size:12px;color:var(--vscode-descriptionForeground)'}, S.dep_when));
+      const wseg=el('div',{className:'seg'});
+      [['success',S.dep_success],['failure',S.dep_failure],['always',S.dep_always]].forEach(([v,lbl])=>{ const b=el('button',{},lbl); if(state.dispararEn===v)b.classList.add('on'); b.addEventListener('click',()=>{ state.dispararEn=v; render(); updateSummary(); }); wseg.append(b); });
+      whenRow.append(wseg);
+      depWrap.append(whenRow);
+      depWrap.append(el('div',{style:'margin-top:7px;font-size:12px;color:var(--vscode-descriptionForeground)'}, S.dep_note));
+      // El encadenado por «éxito» solo dispara si el padre corre en la conversación
+      // (directo). Si el padre elegido es aislado, se avisa en amarillo.
+      const padreSel=(INIT.tareas||[]).find(tk=>tk.id===state.dependeDe);
+      if(padreSel && !padreSel.directo && state.dispararEn!=='failure') depWrap.append(el('div',{style:'margin-top:5px;font-size:11.5px;color:var(--vscode-editorWarning-foreground,#c90)'}, S.dep_only_direct));
+    }
+    main.append(field(S.runs_after, depWrap));
+  }
+
+  // Schedule (una tarea dependiente no tiene horario propio: se dispara por su padre)
+  if(!esDependiente){
   const schWrap=el('div',{});
   const kseg=el('div',{className:'seg'});
   [['daily',S.every_day],['weekly',S.some_days],['once',S.once]].forEach(([k,lbl])=>{ const b=el('button',{},lbl); if(state.regla===k)b.classList.add('on'); b.addEventListener('click',()=>{ state.regla=k; if(k==='once'&&state.horas.length>1)state.horas=[state.horas[0]]; render(); schedulePreview(); }); kseg.append(b); });
@@ -675,6 +731,7 @@ function render(){
   schWrap.append(tz);
   schWrap.append(el('div',{className:'preview',id:'preview'}));
   main.append(field(S.schedule, wrapErr('horas', schWrap)));
+  } // fin del horario (oculto para dependientes)
 
   // Permissions
   const permCards=el('div',{className:'cards'});
@@ -777,12 +834,13 @@ function updateSummary(){
 
 function submit(runNow){
   setErr('_form','');
+  const esDep = !!state.dependeDe; // §27.4: dependiente → sin horario propio
   const horas=state.horas.map(h=>h.trim()).filter(Boolean);
   const okTime = state.regla==='once' ? /^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/.test(horas[0]||'') : horas.every(h=>/^([01]\d|2[0-3]):[0-5]\d$/.test(h));
   let bad=false;
   if(state.nombre.trim().length<3){ setErr('nombre',STR.err_name); bad=true; }
   if(!state.proyecto){ setErr('proyecto',STR.err_repo); bad=true; }
-  if(!horas.length||!okTime){ setErr('horas',STR.err_time); bad=true; }
+  if(!esDep && (!horas.length||!okTime)){ setErr('horas',STR.err_time); bad=true; } // dependiente: horario ignorado
   if(state.modo!=='new'&&!state.sesion.trim()){ setErr('sesion',STR.err_session); bad=true; }
   if(bad)return;
   // Presupuesto vacío = 0 = sin tope (NullFloat trata <=0 como null): así, al
@@ -796,14 +854,25 @@ function submit(runNow){
     else presupuesto = Number(presuTxt);
   }
   if(bad)return;
+  // Una dependiente NO registra disparador, pero conserva su horario si es válido
+  // (así, si luego le quitas la dependencia, recupera el original); si no lo es o
+  // era «una vez», guarda un nominal daily/03:00.
+  const schedOk = horas.length && okTime && state.regla!=='once';
+  const reglaEnvio = esDep ? (schedOk ? state.regla : 'daily') : state.regla;
+  const horasEnvio = esDep ? (schedOk ? horas : ['03:00']) : horas;
+  // dependeDe/dispararEn: al EDITAR se mandan siempre (para poder quitar la
+  // dependencia con cadena vacía); al crear, solo si hay dependencia.
+  const enviarDep = state.editing || esDep;
   vscode.postMessage({type:'submit',payload:{
     proyecto:state.proyecto,nombre:state.nombre,agente:state.agente,prompt:state.prompt,
-    regla:state.regla,horas,dias:state.regla==='weekly'?state.dias:undefined,zona:state.zona,
+    regla:reglaEnvio,horas:horasEnvio,dias:reglaEnvio==='weekly'?state.dias:undefined,zona:state.zona,
     perfil:state.perfil,modo:state.modo,sesion:state.modo==='new'?undefined:state.sesion.trim(),
     // autocompact SÍ se manda vacío (no undefined) para Claude, de modo que
     // elegir "Por defecto" al editar limpie un valor anterior.
     politica:state.politica,presupuesto,autocompact:state.agente==='claude'?state.autocompact:undefined,
-    workspace:state.workspace,runNow
+    workspace:state.workspace,
+    dependeDe:enviarDep?state.dependeDe:undefined, dispararEn:enviarDep?state.dispararEn:undefined,
+    runNow
   }});
 }
 `;

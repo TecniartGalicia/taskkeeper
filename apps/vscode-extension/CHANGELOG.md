@@ -7,6 +7,10 @@
 
 
 
+## 0.8.0 — 2026-08-20
+
+- **Encadenar tareas / acción ante fallo.** Una tarea puede ejecutarse **después de otra**: en el panel (avanzado) eliges «se ejecuta tras…» una tarea y cuándo —cuando termine bien, cuando falle, o de cualquier modo—. La tarea dependiente no tiene horario propio: la dispara su padre al terminar. Se validan los ciclos (A→B→A se rechaza) y en la lista de tareas se ve «tras «Padre»». v1: el encadenado por «termina bien» requiere que el padre corra en la conversación (directo); un padre aislado encadena de momento solo en fallo (el éxito por «aceptar» llegará después).
+
 ## 0.7.0 — 2026-08-20
 
 - **Plantillas de tarea.** Al crear una tarea, el panel ofrece un catálogo de tareas típicas —actualizar dependencias, redactar changelog, barrido de lint, arreglar tests que fallan— que precargan el nombre, el prompt, los permisos, el modo y el horario de un clic; luego ajustas lo que quieras. «Ninguna» vuelve al andamio genérico. Las que cambian código van siempre en modo aislado (revisable); el changelog es de solo lectura.
