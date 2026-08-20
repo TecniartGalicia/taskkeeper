@@ -17,7 +17,7 @@ func nuevaDB(t *testing.T) *store.DB {
 	return db
 }
 
-func tareaSimple(t *testing.T, db *store.DB, nombre, dependeDe string) string {
+func tareaSimple(t *testing.T, db *store.DB, nombre, dependeDe, workspace string) string {
 	t.Helper()
 	pid, _ := db.UpsertProject(store.Project{Name: "d", WorkspacePath: "C:\\d", GitRoot: "C:\\d", DefaultBranch: "main"})
 	trigger := ""
@@ -28,7 +28,7 @@ func tareaSimple(t *testing.T, db *store.DB, nombre, dependeDe string) string {
 		Name: nombre, ProjectID: pid, Agent: "claude", Enabled: true, ConversationMode: "new",
 		ScheduleRule: `{"type":"daily","time":"03:00"}`, Timezone: "Europe/Madrid",
 		MisfirePolicy: "skip", PermissionProfile: "auditoria", TimeoutSeconds: 600,
-		DependsOnTaskID: dependeDe, TriggerOn: trigger,
+		WorkspaceMode: workspace, DependsOnTaskID: dependeDe, TriggerOn: trigger,
 	}, "p")
 	if err != nil {
 		t.Fatal(err)
@@ -40,15 +40,27 @@ func tareaSimple(t *testing.T, db *store.DB, nombre, dependeDe string) string {
 // inexistentes, y normaliza disparar-en.
 func TestValidarDependencia(t *testing.T) {
 	db := nuevaDB(t)
-	a := tareaSimple(t, db, "A", "")
-	b := tareaSimple(t, db, "B", a) // B depende de A
+	a := tareaSimple(t, db, "A", "", "direct") // padre directo: el éxito sí encadena
+	b := tareaSimple(t, db, "B", a, "direct")  // B depende de A (directo, para probar el ciclo)
 
 	o := opcionesTarea{dependeDe: a}
 	if err := validarDependencia(db, &o, ""); err != nil {
-		t.Errorf("depender de A debería valer: %v", err)
+		t.Errorf("depender de A (directo) por éxito debería valer: %v", err)
 	}
 	if o.dispararEn != "success" {
 		t.Errorf("dispararEn por defecto = %q, quiero success", o.dispararEn)
+	}
+
+	// «éxito» sobre un padre AISLADO no encadena (v1): se bloquea.
+	iso := tareaSimple(t, db, "Iso", "", "isolated")
+	o = opcionesTarea{dependeDe: iso, dispararEn: "success"}
+	if err := validarDependencia(db, &o, ""); err == nil {
+		t.Error("«éxito» sobre un padre aislado debería rechazarse")
+	}
+	// pero «falla» sobre un padre aislado sí vale.
+	o = opcionesTarea{dependeDe: iso, dispararEn: "failure"}
+	if err := validarDependencia(db, &o, ""); err != nil {
+		t.Errorf("«falla» sobre un padre aislado debería valer: %v", err)
 	}
 
 	o = opcionesTarea{dependeDe: b}
@@ -83,8 +95,8 @@ func TestValidarDependencia(t *testing.T) {
 // Borrar un padre con dependientes se bloquea (no dejarlas huérfanas).
 func TestCuentaDependientesBloqueaBorrado(t *testing.T) {
 	db := nuevaDB(t)
-	a := tareaSimple(t, db, "A", "")
-	tareaSimple(t, db, "B", a)
+	a := tareaSimple(t, db, "A", "", "direct")
+	tareaSimple(t, db, "B", a, "isolated")
 	n, err := db.CuentaDependientes(a)
 	if err != nil {
 		t.Fatal(err)

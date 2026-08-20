@@ -7,6 +7,10 @@
 
 
 
+## 0.8.1 — 2026-08-20
+
+- Pulido tras la auditoría final: al encadenar «cuando termine bien», ahora se avisa y se impide elegir una tarea padre aislada (que nunca se aceptaría sola y dejaría la dependencia muerta); usa «cuando falle» o «de cualquier modo», o haz que el padre corra en la conversación. Los paneles de resumen y gasto ya no dejan promesas sin capturar si el agente falla durante un refresco automático.
+
 ## 0.8.0 — 2026-08-20
 
 - **Encadenar tareas / acción ante fallo.** Una tarea puede ejecutarse **después de otra**: en el panel (avanzado) eliges «se ejecuta tras…» una tarea y cuándo —cuando termine bien, cuando falle, o de cualquier modo—. La tarea dependiente no tiene horario propio: la dispara su padre al terminar. Se validan los ciclos (A→B→A se rechaza) y en la lista de tareas se ve «tras «Padre»». v1: el encadenado por «termina bien» requiere que el padre corra en la conversación (directo); un padre aislado encadena de momento solo en fallo (el éxito por «aceptar» llegará después).

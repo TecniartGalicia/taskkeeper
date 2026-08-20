@@ -38,7 +38,7 @@ export async function openDigestView(ctl: Ctl, opts?: { beside?: boolean; preser
 
 /** Called by the marker watcher so an open digest updates live. */
 export function refreshOpenDigest(ctl: Ctl): void {
-  if (current) void push(ctl, current);
+  if (current) void push(ctl, current).catch(() => { /* refresco best-effort */ });
 }
 
 async function push(ctl: Ctl, panel: vscode.WebviewPanel): Promise<void> {

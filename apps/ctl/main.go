@@ -379,8 +379,16 @@ func validarDependencia(db *store.DB, o *opcionesTarea, editandoID string) error
 	if o.dependeDe == editandoID {
 		return fmt.Errorf("una tarea no puede depender de sí misma")
 	}
-	if _, err := db.GetTask(o.dependeDe); err != nil {
+	padre, err := db.GetTask(o.dependeDe)
+	if err != nil {
 		return fmt.Errorf("la tarea padre %s no existe", o.dependeDe)
+	}
+	// El encadenado por «éxito» solo se dispara si el padre corre en la conversación
+	// (directo): un padre aislado termina en `awaiting_review` (pendiente de aceptar),
+	// que en v1 no encadena. Se bloquea para no crear una dependencia muerta. «falla»
+	// y «de cualquier modo» sí funcionan con un padre aislado (por la rama de fallo).
+	if o.dispararEn == "success" && padre.WorkspaceMode != "direct" {
+		return fmt.Errorf("«termina bien» solo encadena si la tarea padre corre en la conversación (directo); usa «falla»/«de cualquier modo» o haz directo el padre")
 	}
 	// Ciclo: subiendo de padre en padre desde dependeDe, no debe reaparecer
 	// editandoID. Un conjunto de visitados detecta ciclos de cualquier longitud y

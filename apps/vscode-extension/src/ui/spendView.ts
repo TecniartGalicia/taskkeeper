@@ -42,7 +42,7 @@ export async function openSpendView(ctl: Ctl): Promise<void> {
 
 /** Called by the marker watcher so an open spend view updates live. */
 export function refreshOpenSpend(ctl: Ctl): void {
-  if (current) void push(ctl, current);
+  if (current) void push(ctl, current).catch(() => { /* refresco best-effort */ });
 }
 
 async function push(ctl: Ctl, panel: vscode.WebviewPanel): Promise<void> {
