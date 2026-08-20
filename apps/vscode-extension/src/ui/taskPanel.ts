@@ -11,6 +11,7 @@ import type { Ctl, CreateParams } from '../core/ctl';
 import type { Agent, Task } from '../core/model';
 import { parseRule, systemTimezone } from '../core/schedule';
 import { listSessions, foldersForSession } from '../core/sessions';
+import { plantillas } from './templates';
 
 const t = vscode.l10n.t;
 
@@ -85,6 +86,8 @@ export async function openTaskPanel(
             folders,
             defaultTz: defaultTz || systemTimezone(),
             promptTemplate: PROMPT_TEMPLATE,
+            // §27.3 — plantillas resueltas AQUÍ (host), con el bundle l10n cargado.
+            plantillas: editing ? [] : plantillas(),
             task: editing ? taskToForm(existing as Task) : undefined,
           });
           break;
@@ -243,6 +246,9 @@ function strings(): Record<string, string> {
     repo_locked: t('Fixed for an existing task'),
     agent: t('Agent'),
     signed_in: t('signed in'),
+    template: t('Template (optional)'),
+    tpl_none: t('None'),
+    tpl_none_d: t('Start from the generic scaffold.'),
     what_kind: t('What kind of task?'),
     preset_conv: t('In a conversation'),
     preset_conv_d: t('Continue an existing conversation. The work stays inside its chat; the folder is detected from the id.'),
@@ -397,7 +403,7 @@ let INIT=null, state={
   proyecto:'',proyectoNombre:'',isGit:true,nombre:'',agente:'',prompt:'',
   regla:'daily',horas:['03:00'],dias:[1],zona:'',perfil:'cambios_aislados',
   modo:'new',sesion:'',politica:'skip',presupuesto:'',autocompact:'',workspace:'isolated',editing:false,
-  sessFolders:[],preset:'isolated'
+  sessFolders:[],preset:'isolated',plantilla:''
 };
 let previewTimer=null, resolveTimer=null;
 
@@ -434,6 +440,26 @@ function derivePreset(modo, ws){
   if(modo==='new' && ws==='isolated') return 'isolated';
   return 'advanced';
 }
+// §27.3 — aplica una plantilla al estado (o la restaura a los valores por defecto
+// si es «Ninguna»). Todas las plantillas son nueva+aislada, así que el preset
+// resultante es 'isolated'.
+function aplicarPlantilla(p){
+  state.plantilla = p.id||'';
+  if(!p.id){
+    state.prompt=INIT.promptTemplate; state.nombre='';
+    state.perfil='cambios_aislados'; state.workspace='isolated'; state.modo='new';
+    state.regla='daily'; state.dias=[1]; state.horas=['03:00'];
+  } else {
+    state.nombre=p.nombre; state.prompt=p.prompt;
+    state.perfil=p.perfil; state.workspace=p.workspace; state.modo='new';
+    state.regla=p.regla;
+    // Respeta el contrato: daily → sin días; weekly → los de la plantilla (o lunes).
+    state.dias=(p.dias&&p.dias.length)?p.dias.slice():(p.regla==='weekly'?[1]:[]);
+    state.horas=(p.horas&&p.horas.length)?p.horas.slice():['03:00'];
+  }
+  state.preset=derivePreset(state.modo,state.workspace);
+  render(); schedulePreview(); // render() ya llama a updateSummary()
+}
 function normalizeTask(tk){
   const o={...tk};
   o.presupuesto = (tk.presupuesto==null?'':String(tk.presupuesto));
@@ -453,6 +479,20 @@ function render(){
   const main=el('div',{className:'main'});
   const rail=el('div',{className:'rail'});
   app.append(main,rail);
+
+  // §27.3 — Plantillas (opcional, solo tareas nuevas): precargan el formulario y
+  // el usuario ajusta lo que quiera. «Ninguna» restaura el andamio genérico.
+  if(!state.editing && (INIT.plantillas||[]).length){
+    const plCards=el('div',{className:'cards'});
+    const opciones=[{id:'',nombre:S.tpl_none,desc:S.tpl_none_d}].concat(INIT.plantillas);
+    opciones.forEach(p=>{
+      const c=el('div',{className:'card'+((state.plantilla||'')===p.id?' on':'')});
+      c.append(el('div',{className:'h'},p.nombre), el('div',{className:'d'},p.desc||''));
+      c.addEventListener('click',()=>aplicarPlantilla(p));
+      plCards.append(c);
+    });
+    main.append(field(S.template, plCards));
+  }
 
   const adv = state.preset==='advanced';
 

@@ -268,5 +268,20 @@
   "By task (30 days)": "Por tarea (30 días)",
   "runs": "ejecuciones",
   "No spend recorded yet.": "Aún no hay gasto registrado.",
-  "e.g. 20 (0 = no cap)": "p. ej. 20 (0 = sin tope)"
+  "e.g. 20 (0 = no cap)": "p. ej. 20 (0 = sin tope)",
+  "Template (optional)": "Plantilla (opcional)",
+  "None": "Ninguna",
+  "Start from the generic scaffold.": "Empezar desde el andamio genérico.",
+  "Update dependencies": "Actualizar dependencias",
+  "Weekly: open dependency updates in a worktree for you to review.": "Semanal: deja las actualizaciones de dependencias en un worktree para que las revises.",
+  "Check this repository for outdated or vulnerable dependencies. Update the safe ones (patch/minor), run the build and tests, and leave the changes in this worktree for review. Do not update anything that breaks the build. Summarise what you changed and why.": "Revisa este repositorio en busca de dependencias obsoletas o vulnerables. Actualiza las seguras (patch/minor), compila y ejecuta los tests, y deja los cambios en este worktree para revisar. No actualices nada que rompa la compilación. Resume qué cambiaste y por qué.",
+  "Draft changelog": "Redactar changelog",
+  "Weekly, read-only: summarise the week’s merged changes.": "Semanal, solo lectura: resume los cambios fusionados de la semana.",
+  "Read the commits merged in the last 7 days and draft a concise changelog entry grouped by type (features, fixes, chores). Read only — do not change any files; put the draft in your final summary.": "Lee los commits fusionados en los últimos 7 días y redacta una entrada de changelog concisa agrupada por tipo (novedades, correcciones, tareas). Solo lectura — no cambies ningún fichero; deja el borrador en tu resumen final.",
+  "Lint sweep": "Barrido de lint",
+  "Daily: auto-fix safe lint issues in a worktree for review.": "Diario: corrige automáticamente los avisos de lint seguros en un worktree para revisar.",
+  "Run the project's linter and formatter. Fix only the safe, mechanical issues (formatting, imports, obvious lint rules). Do not change logic. Run the tests to confirm nothing broke, and leave the changes in this worktree for review.": "Ejecuta el linter y el formateador del proyecto. Corrige solo lo seguro y mecánico (formato, imports, reglas de lint obvias). No cambies la lógica. Ejecuta los tests para confirmar que nada se rompió y deja los cambios en este worktree para revisar.",
+  "Fix failing tests": "Arreglar tests que fallan",
+  "Daily: if the suite is red, fix it in a worktree for review.": "Diario: si la batería está en rojo, arréglala en un worktree para revisar.",
+  "Run the test suite. If everything passes, stop and say so. If anything fails, investigate the cause and fix it in this worktree, keeping changes minimal. Do not delete or skip tests to make them pass. Summarise what failed and how you fixed it.": "Ejecuta la batería de tests. Si todo pasa, para y dilo. Si algo falla, investiga la causa y arréglalo en este worktree, con cambios mínimos. No borres ni saltes tests para que pasen. Resume qué falló y cómo lo arreglaste."
 }

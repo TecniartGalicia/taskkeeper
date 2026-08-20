@@ -7,6 +7,10 @@
 
 
 
+## 0.7.0 — 2026-08-20
+
+- **Plantillas de tarea.** Al crear una tarea, el panel ofrece un catálogo de tareas típicas —actualizar dependencias, redactar changelog, barrido de lint, arreglar tests que fallan— que precargan el nombre, el prompt, los permisos, el modo y el horario de un clic; luego ajustas lo que quieras. «Ninguna» vuelve al andamio genérico. Las que cambian código van siempre en modo aislado (revisable); el changelog es de solo lectura.
+
 ## 0.6.1 — 2026-08-20
 
 - **Gasto visible + tope mensual.** Un panel nuevo («Gasto», desde la bandeja) muestra el coste del mes frente a un **tope mensual** que puedes fijar, con desglose por día (barras) y por tarea. El tope lo respeta el propio ejecutor: si el mes ya llegó al tope, la siguiente tarea se **salta** antes de gastar (aviso con el motivo). También se aplica ya el **tope diario por tarea** (antes se guardaba pero no surtía efecto). Nota: el coste solo lo informa Claude; con Codex el gasto no se contabiliza y su tope no tiene efecto — el panel lo advierte.
