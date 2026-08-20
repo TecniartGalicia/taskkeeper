@@ -8,6 +8,7 @@
   "welcome.tasks": "No tasks yet.\n\nA task runs Claude Code or Codex on a schedule, inside its own Git worktree, so your repository is never touched until you review.\n\n[New task](command:taskkeeper.newTask)\n[Get started (guided tour)](command:taskkeeper.getStarted)",
   "cmd.getStarted": "Get Started (Tutorial)",
   "cmd.showDigest": "Last night (digest + scheduler health)",
+  "cmd.showSpend": "Spending (cost + monthly cap)",
   "cmd.newTask": "New Task",
   "cmd.refresh": "Refresh",
   "cmd.runNow": "Run Now",

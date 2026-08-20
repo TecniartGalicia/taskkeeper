@@ -6,7 +6,7 @@
 // how the data is stored. Spawning an 11 MB static binary costs a few dozen
 // milliseconds, well within what a tree view needs.
 import { execFile } from 'node:child_process';
-import type { Agent, Digest, Environment, Run, RunEvent, Task } from './model';
+import type { Agent, Digest, Environment, Run, RunEvent, Spend, Task } from './model';
 
 export interface CtlResult<T> {
   ok: boolean;
@@ -152,6 +152,14 @@ export class Ctl {
   /** §27.1: «lo que pasó anoche» (ventana móvil de `horas`) + salud del planificador. */
   digest(horas = 16): Promise<Digest> {
     return this.call('resumen', '--horas', String(horas));
+  }
+  /** §27.2: gasto del mes + desglose por tarea/día + el tope mensual actual. */
+  spend(): Promise<Spend> {
+    return this.call('gasto');
+  }
+  /** §27.2: fija el tope de gasto mensual de la máquina (0 = sin tope). */
+  setMonthlyCap(usd: number): Promise<{ tope_mes_usd: number }> {
+    return this.call('tope-mensual', String(usd));
   }
 }
 

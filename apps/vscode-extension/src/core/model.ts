@@ -193,6 +193,24 @@ export interface Digest {
   salud: HealthTask[];
 }
 
+// §27.2 — gasto + tope mensual.
+export interface SpendTask {
+  tarea_id: string;
+  tarea: string;
+  runs: number;
+  usd: number;
+}
+export interface SpendDay {
+  dia: string; // YYYY-MM-DD
+  usd: number;
+}
+export interface Spend {
+  mes_usd: number;
+  tope_mes_usd: number; // 0 = sin tope
+  por_tarea: SpendTask[];
+  por_dia: SpendDay[];
+}
+
 /** "2026-08-25T03:15" or RFC3339 → short local time for a list. */
 export function shortTime(iso: string): string {
   if (!iso) return '';

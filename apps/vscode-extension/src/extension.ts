@@ -11,6 +11,7 @@ import { runNewTaskWizard } from './ui/wizard';
 import { openTaskPanel } from './ui/taskPanel';
 import { openRunView, refreshOpenRunView, initRunView } from './ui/runView';
 import { openDigestView, refreshOpenDigest } from './ui/digestView';
+import { openSpendView, refreshOpenSpend } from './ui/spendView';
 
 const t = vscode.l10n.t;
 
@@ -74,6 +75,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         onMarker(inbox, refreshAll);
         if (ctl) refreshOpenRunView(ctl);
         if (ctl) refreshOpenDigest(ctl);
+        if (ctl) refreshOpenSpend(ctl);
       }) });
       if (env.aviso_reactivacion) log(`wake: ${env.aviso_reactivacion}`);
     } catch (e) {
@@ -325,6 +327,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // §27.1 — Resumen de anoche.
   reg('taskkeeper.showDigest', async () => {
     await openDigestView(need());
+  });
+  // §27.2 — Gasto + tope mensual.
+  reg('taskkeeper.showSpend', async () => {
+    await openSpendView(need());
   });
   // Auto-apertura una vez al día si hubo actividad; al lado y SIN robar el foco.
   // Requiere binarios (ctl); en plataformas sin ellos no se intenta.

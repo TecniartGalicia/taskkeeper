@@ -135,6 +135,25 @@ func (db *DB) Cupo() int {
 	return n
 }
 
+// Tope mensual de gasto de la máquina (§27.2). 0 = sin tope. Es un ajuste único
+// para todo el equipo, como el cupo, así que vive en `meta` y no en cada tarea.
+const ClaveTopeMes = "monthly_budget_usd"
+
+func (db *DB) TopeMes() float64 {
+	v, err := strconv.ParseFloat(db.Ajuste(ClaveTopeMes, "0"), 64)
+	if err != nil || v < 0 {
+		return 0
+	}
+	return v
+}
+
+func (db *DB) FijarTopeMes(v float64) error {
+	if v < 0 {
+		v = 0
+	}
+	return db.FijarAjuste(ClaveTopeMes, strconv.FormatFloat(v, 'f', 2, 64))
+}
+
 // ---------- utilidades ----------
 
 func NewID() string {

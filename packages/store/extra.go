@@ -369,6 +369,76 @@ func (db *DB) SaludBase(desdeUTC string) ([]SaludBaseTarea, error) {
 	return out, nil
 }
 
+// ---------- gasto (§27.2) ----------
+
+type GastoTarea struct {
+	TareaID string  `json:"tarea_id"`
+	Tarea   string  `json:"tarea"`
+	Runs    int     `json:"runs"`
+	USD     float64 `json:"usd"`
+}
+type GastoDia struct {
+	Dia string  `json:"dia"`
+	USD float64 `json:"usd"`
+}
+
+// GastoDesde suma el coste INFORMADO por el agente desde desdeUTC (RFC3339). Solo
+// cuenta runs con cost_usd no nulo; Codex no reporta coste, así que sus runs no
+// suman (limitación conocida: la UI lo advierte).
+func (db *DB) GastoDesde(desdeUTC string) (float64, error) {
+	var v sql.NullFloat64
+	err := db.QueryRow(`SELECT COALESCE(SUM(cost_usd),0) FROM runs
+		WHERE cost_usd IS NOT NULL AND finished_at >= ?`, desdeUTC).Scan(&v)
+	return v.Float64, err
+}
+
+// GastoDiaTarea suma el coste de UNA tarea desde desdeUTC (para el tope diario).
+func (db *DB) GastoDiaTarea(taskID, desdeUTC string) (float64, error) {
+	var v sql.NullFloat64
+	err := db.QueryRow(`SELECT COALESCE(SUM(cost_usd),0) FROM runs
+		WHERE task_id=? AND cost_usd IS NOT NULL AND finished_at >= ?`, taskID, desdeUTC).Scan(&v)
+	return v.Float64, err
+}
+
+func (db *DB) GastoPorTarea(desdeUTC string) ([]GastoTarea, error) {
+	rows, err := db.Query(`SELECT r.task_id, t.name, COUNT(*), COALESCE(SUM(r.cost_usd),0)
+		FROM runs r JOIN tasks t ON t.id=r.task_id
+		WHERE r.cost_usd IS NOT NULL AND r.finished_at >= ?1
+		GROUP BY r.task_id ORDER BY SUM(r.cost_usd) DESC`, desdeUTC)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []GastoTarea{}
+	for rows.Next() {
+		var g GastoTarea
+		if err := rows.Scan(&g.TareaID, &g.Tarea, &g.Runs, &g.USD); err != nil {
+			return nil, err
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) GastoPorDia(desdeUTC string) ([]GastoDia, error) {
+	rows, err := db.Query(`SELECT substr(finished_at,1,10), COALESCE(SUM(cost_usd),0)
+		FROM runs WHERE cost_usd IS NOT NULL AND finished_at >= ?1
+		GROUP BY substr(finished_at,1,10) ORDER BY 1`, desdeUTC)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []GastoDia{}
+	for rows.Next() {
+		var g GastoDia
+		if err := rows.Scan(&g.Dia, &g.USD); err != nil {
+			return nil, err
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
 // cuentaPorTarea ejecuta una consulta `SELECT task_id, COUNT(*)` y la vuelca a un mapa.
 func (db *DB) cuentaPorTarea(q, arg string) (map[string]int, error) {
 	m := map[string]int{}

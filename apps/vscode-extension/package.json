@@ -2,7 +2,7 @@
   "name": "taskkeeper",
   "displayName": "TaskKeeper",
   "description": "Run Claude Code and Codex on a schedule, isolated in a Git worktree, and review the diff in the morning before anything touches your branch. Local-first, no telemetry, free. Not affiliated with any agent vendor.",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "publisher": "argalla",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -229,6 +229,12 @@
         "title": "%cmd.showDigest%",
         "category": "TaskKeeper",
         "icon": "$(graph)"
+      },
+      {
+        "command": "taskkeeper.showSpend",
+        "title": "%cmd.showSpend%",
+        "category": "TaskKeeper",
+        "icon": "$(credit-card)"
       }
     ],
     "menus": {
@@ -242,6 +248,11 @@
           "command": "taskkeeper.showDigest",
           "when": "view == taskkeeper.inbox",
           "group": "navigation@2"
+        },
+        {
+          "command": "taskkeeper.showSpend",
+          "when": "view == taskkeeper.inbox",
+          "group": "navigation@3"
         },
         {
           "command": "taskkeeper.refresh",

@@ -7,6 +7,10 @@
 
 
 
+## 0.6.1 — 2026-08-20
+
+- **Gasto visible + tope mensual.** Un panel nuevo («Gasto», desde la bandeja) muestra el coste del mes frente a un **tope mensual** que puedes fijar, con desglose por día (barras) y por tarea. El tope lo respeta el propio ejecutor: si el mes ya llegó al tope, la siguiente tarea se **salta** antes de gastar (aviso con el motivo). También se aplica ya el **tope diario por tarea** (antes se guardaba pero no surtía efecto). Nota: el coste solo lo informa Claude; con Codex el gasto no se contabiliza y su tope no tiene efecto — el panel lo advierte.
+
 ## 0.6.0 — 2026-08-20
 
 - **Resumen de anoche + salud del planificador.** Un panel nuevo («Anoche», también desde la bandeja) resume de un vistazo lo que corrió mientras no estabas —terminadas, esperando revisión, fallidas, saltadas, en curso y coste— y, sobre todo, detecta el **fallo silencioso**: si el disparador de una tarea en el sistema operativo se ha desregistrado, lo marca en rojo («falta el disparador»); también cuenta los disparos perdidos por retraso. Se abre solo una vez al día, al lado y sin robar el foco, si hubo actividad.

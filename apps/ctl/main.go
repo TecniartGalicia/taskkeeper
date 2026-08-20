@@ -129,10 +129,66 @@ func main() {
 		entorno(out, cfg)
 	case "resumen":
 		resumen(out, db, resto[1:])
+	case "gasto":
+		gasto(out, db)
+	case "tope-mensual":
+		topeMensual(out, db, resto[1:])
 	default:
 		uso()
 		os.Exit(2)
 	}
+}
+
+// gasto: coste informado del mes + tope, y desglose por tarea (30 d) y por día (14 d).
+func gasto(out salida, db *store.DB) {
+	ahora := time.Now().UTC()
+	inicioMes := time.Date(ahora.Year(), ahora.Month(), 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	mes, err := db.GastoDesde(inicioMes)
+	if err != nil {
+		out.fallo(err)
+	}
+	porTarea, err := db.GastoPorTarea(ahora.AddDate(0, 0, -30).Format(time.RFC3339))
+	if err != nil {
+		out.fallo(err)
+	}
+	porDiaRaw, err := db.GastoPorDia(ahora.AddDate(0, 0, -14).Format(time.RFC3339))
+	if err != nil {
+		out.fallo(err)
+	}
+	// Eje continuo de 14 días (rellena los días sin gasto con 0) para que el gráfico
+	// sea un eje diario real y no una lista de barras dispersas.
+	gastoDia := map[string]float64{}
+	for _, g := range porDiaRaw {
+		gastoDia[g.Dia] = g.USD
+	}
+	porDia := make([]store.GastoDia, 0, 14)
+	for i := 13; i >= 0; i-- {
+		dia := ahora.AddDate(0, 0, -i).Format("2006-01-02")
+		porDia = append(porDia, store.GastoDia{Dia: dia, USD: gastoDia[dia]})
+	}
+	out.ok(map[string]any{
+		"mes_usd": mes, "tope_mes_usd": db.TopeMes(), "por_tarea": porTarea, "por_dia": porDia,
+	}, func() {
+		fmt.Printf("mes: %.2f USD (tope %.2f)\n", mes, db.TopeMes())
+		for _, g := range porTarea {
+			fmt.Printf("  %-24s %d runs  %.2f USD\n", g.Tarea, g.Runs, g.USD)
+		}
+	})
+}
+
+// topeMensual: sin args, lee el tope; con un número, lo fija (0 = sin tope).
+func topeMensual(out salida, db *store.DB, args []string) {
+	if len(args) > 0 {
+		v, err := strconv.ParseFloat(strings.Replace(args[0], ",", ".", 1), 64)
+		if err != nil {
+			out.fallo(fmt.Errorf("tope inválido %q: usa un número como 20 o 20.00", args[0]))
+		}
+		if err := db.FijarTopeMes(v); err != nil {
+			out.fallo(err)
+		}
+	}
+	out.ok(map[string]float64{"tope_mes_usd": db.TopeMes()},
+		func() { fmt.Printf("tope mensual: %.2f USD\n", db.TopeMes()) })
 }
 
 // resumen: «lo que pasó anoche» (ventana móvil --horas, 16 por defecto) + salud
@@ -216,6 +272,8 @@ func uso() {
   agentes                       qué agentes hay instalados y dónde
   entorno                       rutas y avisos de esta máquina
   resumen   [--horas n]         resumen de anoche + salud del planificador
+  gasto                         coste del mes + desglose por tarea y por día
+  tope-mensual [usd]            lee o fija el tope de gasto mensual (0 = sin tope)
   version`)
 }
 

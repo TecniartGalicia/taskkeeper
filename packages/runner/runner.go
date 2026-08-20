@@ -124,6 +124,26 @@ func revID(db *store.DB, taskID string) string {
 	return ""
 }
 
+// topeSuperado devuelve un motivo (JSON, para no confundirse con el misfire de la
+// vista de salud) si un tope de gasto impide ejecutar, o "" si se puede seguir.
+// El tope mensual es de máquina; el diario, por tarea (campo daily_budget_usd, que
+// hasta ahora se guardaba pero no se aplicaba).
+func topeSuperado(db *store.DB, task *store.Task, ahora time.Time) string {
+	if tope := db.TopeMes(); tope > 0 {
+		inicioMes := time.Date(ahora.Year(), ahora.Month(), 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339)
+		if g, err := db.GastoDesde(inicioMes); err == nil && g >= tope {
+			return fmt.Sprintf(`{"motivo":"tope_mensual","detalle":"tope mensual de %.2f USD alcanzado (%.2f gastados)"}`, tope, g)
+		}
+	}
+	if task.DailyBudgetUSD.Valid && task.DailyBudgetUSD.Float64 > 0 {
+		inicioDia := time.Date(ahora.Year(), ahora.Month(), ahora.Day(), 0, 0, 0, 0, time.UTC).Format(time.RFC3339)
+		if g, err := db.GastoDiaTarea(task.ID, inicioDia); err == nil && g >= task.DailyBudgetUSD.Float64 {
+			return fmt.Sprintf(`{"motivo":"tope_diario","detalle":"tope diario de %.2f USD alcanzado (%.2f hoy)"}`, task.DailyBudgetUSD.Float64, g)
+		}
+	}
+	return ""
+}
+
 // Ejecutar procesa una ocurrencia concreta. Lo usa EjecutarProgramada con la
 // hora derivada, y el arranque manual con el instante actual: así una prueba a
 // mano no consume la ocurrencia programada de esta noche.
@@ -154,6 +174,16 @@ func Ejecutar(ctx context.Context, db *store.DB, d Deps, o Opciones,
 		return nil
 	}
 
+	// 1b. Topes de gasto (§27.2). Se comprueban aquí, en `queued`, ANTES de tomar
+	//     turno o crear worktree: un salto por tope no debe consumir recursos. La
+	//     ventana se ancla en la hora REAL (como el panel), no en la ocurrencia, para
+	//     que el tope diario de una tarea de madrugada no se desfase. Solo el coste
+	//     informado por el agente cuenta: Codex no lo reporta — la UI lo advierte.
+	if motivo := topeSuperado(db, task, time.Now().UTC()); motivo != "" {
+		db.Transition(run.ID, store.StateSkipped, motivo)
+		return nil
+	}
+
 	// 2. Turno. Sin coordinador central, el cupo se reparte con ficheros.
 	slot, err := turns.Acquire(o.CupoSimultaneo, o.DirTurnos, o.EsperaTurno)
 	if err != nil {
@@ -164,6 +194,14 @@ func Ejecutar(ctx context.Context, db *store.DB, d Deps, o Opciones,
 
 	if db.CancelRequested(run.ID) {
 		db.Transition(run.ID, store.StateCancelled, "cancelada antes de empezar")
+		return nil
+	}
+
+	// Re-comprobación del tope tras esperar turno: con cupo=1 la run anterior pudo
+	// terminar mientras esperábamos y dejar el mes por encima del tope. Cierra la
+	// fuga de «una run extra por worker en espera».
+	if motivo := topeSuperado(db, task, time.Now().UTC()); motivo != "" {
+		db.Transition(run.ID, store.StateSkipped, motivo)
 		return nil
 	}
 

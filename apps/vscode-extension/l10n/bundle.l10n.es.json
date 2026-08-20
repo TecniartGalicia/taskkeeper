@@ -255,5 +255,18 @@
   "missed": "perdidos",
   "pending": "pendientes",
   "All triggers registered.": "Todos los disparadores registrados.",
-  "No scheduled tasks.": "No hay tareas programadas."
+  "No scheduled tasks.": "No hay tareas programadas.",
+  "Spending": "Gasto",
+  "Enter an amount like 20, or 0 for no cap.": "Introduce una cantidad como 20, o 0 para sin tope.",
+  "This month": "Este mes",
+  "Monthly cap": "Tope mensual",
+  "Save": "Guardar",
+  "over the cap": "por encima del tope",
+  "near the cap": "cerca del tope",
+  "Only reported cost counts — Codex does not report it, so its runs are not included and its cap has no effect.": "Solo cuenta el coste informado — Codex no lo reporta, así que sus ejecuciones no se incluyen y su tope no tiene efecto.",
+  "By day (14 days)": "Por día (14 días)",
+  "By task (30 days)": "Por tarea (30 días)",
+  "runs": "ejecuciones",
+  "No spend recorded yet.": "Aún no hay gasto registrado.",
+  "e.g. 20 (0 = no cap)": "p. ej. 20 (0 = sin tope)"
 }
