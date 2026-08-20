@@ -6,6 +6,11 @@
 
 
 
+
+## 0.4.0 — 2026-08-19
+
+- **La carpeta se detecta sola desde la conversación.** Al elegir «Continuar» o «Derivar» y meter el id de una conversación, TaskKeeper averigua en qué carpeta vive esa conversación y pone el repositorio por ti — ya no tienes que acertar la carpeta a mano. Si la misma conversación existe en varias carpetas, te las ofrece para elegir.
+
 ## 0.3.3 — 2026-08-19
 
 - La vista de resultado muestra la **carpeta** donde corrió la ejecución.

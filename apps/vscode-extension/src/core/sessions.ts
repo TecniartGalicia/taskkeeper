@@ -113,7 +113,7 @@ export function foldersForSession(sessionId: string, env: NodeJS.ProcessEnv = pr
     } catch {
       continue;
     }
-    const cwd = cwdMatchingDir(file, d);
+    const cwd = cwdMatchingDir(file, d, st.size);
     if (cwd && isDir(cwd)) out.push({ cwd, file, lastModified: st.mtime });
   }
   out.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
@@ -128,18 +128,23 @@ function isDir(p: string): boolean {
   }
 }
 
-/** Scans a transcript for a `cwd` whose encoding equals the folder name. */
-function cwdMatchingDir(file: string, dirName: string, maxBytes = 20 * 1024 * 1024): string | undefined {
+/** Scans a transcript for a `cwd` whose encoding matches the folder name. */
+function cwdMatchingDir(file: string, dirName: string, fileSize: number, maxBytes = 20 * 1024 * 1024): string | undefined {
   const want = dirName.toLowerCase();
   let text: string;
   try {
-    const st = fs.statSync(file);
     const fd = fs.openSync(file, 'r');
     try {
-      const size = Math.min(st.size, maxBytes);
+      const size = Math.min(fileSize, maxBytes);
       const buf = Buffer.alloc(size);
-      fs.readSync(fd, buf, 0, size, 0);
-      text = buf.toString('utf8');
+      // readSync can return a short read; loop until the buffer is filled.
+      let read = 0;
+      while (read < size) {
+        const n = fs.readSync(fd, buf, read, size - read, read);
+        if (n <= 0) break;
+        read += n;
+      }
+      text = buf.subarray(0, read).toString('utf8');
     } finally {
       fs.closeSync(fd);
     }
@@ -158,7 +163,10 @@ function cwdMatchingDir(file: string, dirName: string, maxBytes = 20 * 1024 * 10
     const cwd = typeof obj?.cwd === 'string' ? obj.cwd : '';
     if (!cwd || seen.has(cwd)) continue;
     seen.add(cwd);
-    if (encodeCwd(cwd).toLowerCase() === want) return cwd;
+    const enc = encodeCwd(cwd).toLowerCase();
+    // Claude Code truncates long encoded names to 200 chars + a hash suffix, so
+    // for those match on the 200-char prefix, like listSessions does.
+    if (enc === want || (want.length > 200 && enc.startsWith(want.slice(0, 200)))) return cwd;
   }
   return undefined;
 }

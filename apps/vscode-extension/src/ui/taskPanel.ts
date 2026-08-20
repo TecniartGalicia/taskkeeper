@@ -116,7 +116,11 @@ export async function openTaskPanel(
           const locs = id ? foldersForSession(id) : [];
           panel.webview.postMessage({
             type: 'sessionFolders',
-            folders: locs.map((l) => ({ cwd: l.cwd, name: path.basename(l.cwd) })),
+            folders: locs.map((l) => ({
+              cwd: l.cwd,
+              name: path.basename(l.cwd),
+              isGit: fs.existsSync(path.join(l.cwd, '.git')),
+            })),
           });
           break;
         }
@@ -348,6 +352,7 @@ textarea{min-height:120px;resize:vertical;font-family:var(--vscode-editor-font-f
 .chip{display:inline-flex;align-items:center;gap:6px;background:var(--vscode-badge-background);color:var(--vscode-badge-foreground);border-radius:5px;padding:5px 10px;font-size:12.5px;font-variant-numeric:tabular-nums}
 .chip button{border:0;background:transparent;color:inherit;cursor:pointer;font-size:13px;opacity:.7;padding:0}
 .chip button:hover{opacity:1}
+.chip.on{outline:2px solid var(--vscode-focusBorder);outline-offset:1px}
 .time-in{width:74px !important;text-align:center;font-variant-numeric:tabular-nums}
 .btn{border:0;border-radius:5px;padding:8px 15px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
 .btn.primary{background:var(--vscode-button-background);color:var(--vscode-button-foreground)}
@@ -480,7 +485,7 @@ function render(){
       const box=el('div',{style:'margin-top:8px;font-size:12px'});
       box.append(el('div',{style:'color:var(--vscode-descriptionForeground);margin-bottom:5px'}, S.folder_multi));
       const row=el('div',{className:'row'});
-      sf.forEach(f=>{ const b=el('button',{className:'chip'+(state.proyecto===f.cwd?' ':''),title:f.cwd},f.name); b.addEventListener('click',()=>{ setProyecto(f.cwd,f.name); render(); updateSummary(); }); row.append(b); });
+      sf.forEach(f=>{ const b=el('button',{className:'chip'+(state.proyecto===f.cwd?' on':''),title:f.cwd},f.name); b.addEventListener('click',()=>{ setProyecto(f.cwd,f.name,f.isGit); render(); updateSummary(); }); row.append(b); });
       box.append(row);
       ctxWrap.append(box);
     }
@@ -602,11 +607,11 @@ function wrapErr(key,node){ const w=el('div',{}); w.append(node); w.append(el('d
 function setErr(key,msg){ const e=document.getElementById('err_'+key)||document.getElementById('err__form'); if(e)e.textContent=msg||''; }
 
 function requestSessions(){ if(state.agente==='claude'&&state.proyecto) vscode.postMessage({type:'listSessions',agent:state.agente,cwd:state.proyecto}); }
-function setProyecto(cwd,name){ state.proyecto=cwd; state.proyectoNombre=name; state.isGit=true; }
+function setProyecto(cwd,name,isGit){ state.proyecto=cwd; state.proyectoNombre=name; state.isGit=isGit!==false; }
 function scheduleResolve(){ clearTimeout(resolveTimer); resolveTimer=setTimeout(()=>{ const id=(state.sesion||'').trim(); if(id.length>=6) vscode.postMessage({type:'resolveSession',id}); },350); }
 function onSessionFolders(folders){
   state.sessFolders=folders||[];
-  if(folders.length===1){ setProyecto(folders[0].cwd,folders[0].name); }
+  if(folders.length===1){ setProyecto(folders[0].cwd,folders[0].name,folders[0].isGit); }
   render(); updateSummary();
 }
 function renderSessions(list){
