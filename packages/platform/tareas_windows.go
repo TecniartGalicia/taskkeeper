@@ -25,6 +25,11 @@ func RegistrarTarea(taskID, comando, argumentos string, spec EspecDisparador) er
 }
 func RetirarTarea(taskID string) error { return win.Unregister(taskID) }
 
+// TareaExiste dice si el disparador del SO de esta tarea sigue registrado. Recibe
+// el id CRUDO (win.Exists ya envuelve con NombreTarea); pasarle el nombre completo
+// lo doble-envolvería y daría siempre false.
+func TareaExiste(taskID string) bool { return win.Exists(taskID) }
+
 // RegistrarReintento deja un disparador puntual `<id>-retry` que lanza el worker
 // en modo manual a la hora indicada y se retira a sí mismo al arrancar.
 func RegistrarReintento(worker, taskID string, cuando time.Time) error {

@@ -98,8 +98,11 @@ func EjecutarProgramada(ctx context.Context, db *store.DB, d Deps, o Opciones,
 		// Se deja constancia de la omisión: que no se ejecutase también es
 		// información, y sin ella el usuario no entiende por qué no pasó nada.
 		if run, creada, err := db.CreateRunIfAbsent(taskID, revID(db, taskID), occ.ScheduledForUTC); err == nil && creada {
+			// Motivo estructurado: la vista de salud (§27.1) lo distingue del salto
+			// por «sin turno libre» sin depender de la prosa del mensaje.
 			db.Transition(run.ID, store.StateSkipped,
-				fmt.Sprintf("retraso de %s sobre la hora prevista", ahora.Sub(occ.ScheduledForUTC).Round(time.Minute)))
+				fmt.Sprintf(`{"motivo":"misfire","detalle":"retraso de %s sobre la hora prevista"}`,
+					ahora.Sub(occ.ScheduledForUTC).Round(time.Minute)))
 		}
 		return nil
 

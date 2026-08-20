@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"strings"
 )
 
 // Tipos que la línea de órdenes usa para construir tareas sin importar
@@ -251,4 +252,140 @@ func defaultStr(v, d string) string {
 		return d
 	}
 	return v
+}
+
+// ---------- resumen matinal / salud del planificador (§27.1) ----------
+
+type ResumenNoche struct {
+	DesdeUTC        string  `json:"desde_utc"`
+	Terminadas      int     `json:"terminadas"`       // completed + accepted + rejected (resueltas)
+	EsperanRevision int     `json:"esperan_revision"` // awaiting_review
+	Fallidas        int     `json:"fallidas"`         // failed*
+	Saltadas        int     `json:"saltadas"`         // skipped (misfire / sin turno / tope)
+	EnCurso         int     `json:"en_curso"`         // running/queued/preflight/verifying
+	CosteTotalUSD   float64 `json:"coste_total_usd"`
+}
+
+// ResumenNoche agrega las ejecuciones terminadas desde desdeUTC (RFC3339) más las
+// que siguen en curso. El bucketing por estado se hace en Go. `rejected` cuenta en
+// Terminadas para que los contadores cuadren con el coste total.
+func (db *DB) ResumenNoche(desdeUTC string) (ResumenNoche, error) {
+	r := ResumenNoche{DesdeUTC: desdeUTC}
+	// La rama en-curso se acota también por recencia (`scheduled_for_utc>=?1`): sin
+	// ese límite, una run huérfana atascada en `queued` (p. ej. una pendiente-manual
+	// que nunca se resuelve) se contaría como «en curso» noche tras noche.
+	rows, err := db.Query(`SELECT status, cost_usd FROM runs
+		WHERE finished_at >= ?1
+		   OR (status IN ('running','queued','preflight','verifying') AND scheduled_for_utc >= ?1)`, desdeUTC)
+	if err != nil {
+		return r, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var st string
+		var cost sql.NullFloat64
+		if err := rows.Scan(&st, &cost); err != nil {
+			return r, err
+		}
+		switch State(st) {
+		case StateCompleted, StateAccepted, StateRejected:
+			r.Terminadas++
+		case StateAwaitingReview:
+			r.EsperanRevision++
+		case StateSkipped:
+			r.Saltadas++
+		case StateRunning, StateQueued, StatePreflight, StateVerifying:
+			r.EnCurso++
+		case StateCancelled:
+			// Terminal con posible coste; se cuenta como fallida (coherente con
+			// FAILED_STATES del front) para que los contadores cuadren con el coste.
+			r.Fallidas++
+		default:
+			if strings.HasPrefix(st, "failed") {
+				r.Fallidas++
+			}
+		}
+		if cost.Valid {
+			r.CosteTotalUSD += cost.Float64
+		}
+	}
+	return r, rows.Err()
+}
+
+type SaludBaseTarea struct {
+	TareaID          string
+	Tarea            string
+	DisparosPerdidos int // skipped POR MISFIRE (no por sin-turno ni tope de gasto)
+	Pendientes       int // pendientes de decisión manual (misfire con política 'manual')
+}
+
+// SaludBase, por cada tarea activa: disparos perdidos por MISFIRE y pendientes de
+// decisión manual en la ventana [desdeUTC, ahora]. `skipped` tiene varios orígenes
+// (misfire, sin turno libre, tope de gasto §27.2) y todos comparten estado; solo el
+// de misfire cuenta aquí, y se distingue por el detalle de auditoría del run saltado.
+// Nota: los audits de transición (`state_skipped`) guardan task_id NULL, así que se
+// unen por `run_id`; los `pendiente_de_decision` sí llevan task_id.
+func (db *DB) SaludBase(desdeUTC string) ([]SaludBaseTarea, error) {
+	// 1) tareas activas (ids + nombres); se cierra el cursor antes de más consultas
+	//    (una sola conexión: consultar dentro del recorrido bloquearía).
+	type tn struct{ id, name string }
+	rows, err := db.Query(`SELECT id, name FROM tasks WHERE enabled=1 ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	var tareas []tn
+	for rows.Next() {
+		var t tn
+		if err := rows.Scan(&t.id, &t.name); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		tareas = append(tareas, t)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// 2) disparos perdidos: runs skipped cuyo motivo de auditoría habla de retraso.
+	perdidos, err := db.cuentaPorTarea(`SELECT r.task_id, COUNT(*) FROM runs r
+		JOIN audit a ON a.run_id=r.id AND a.action='state_skipped'
+		WHERE r.status='skipped' AND a.at>=?1 AND a.detail_json LIKE '%"motivo":"misfire"%'
+		GROUP BY r.task_id`, desdeUTC)
+	if err != nil {
+		return nil, err
+	}
+	// 3) pendientes de decisión manual (este audit sí lleva task_id).
+	pend, err := db.cuentaPorTarea(`SELECT task_id, COUNT(*) FROM audit
+		WHERE action='pendiente_de_decision' AND task_id IS NOT NULL AND at>=?1
+		GROUP BY task_id`, desdeUTC)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SaludBaseTarea, 0, len(tareas))
+	for _, t := range tareas {
+		out = append(out, SaludBaseTarea{TareaID: t.id, Tarea: t.name,
+			DisparosPerdidos: perdidos[t.id], Pendientes: pend[t.id]})
+	}
+	return out, nil
+}
+
+// cuentaPorTarea ejecuta una consulta `SELECT task_id, COUNT(*)` y la vuelca a un mapa.
+func (db *DB) cuentaPorTarea(q, arg string) (map[string]int, error) {
+	m := map[string]int{}
+	rows, err := db.Query(q, arg)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id sql.NullString
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		if id.Valid {
+			m[id.String] = n
+		}
+	}
+	return m, rows.Err()
 }

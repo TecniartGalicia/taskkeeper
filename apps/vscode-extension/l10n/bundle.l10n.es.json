@@ -243,5 +243,17 @@
   "Fresh work in a worktree of a repository. You review the diff and accept or reject.": "Trabajo nuevo en un worktree de un repositorio. Revisas el diff y aceptas o rechazas.",
   "Advanced — mix conversation and workspace": "Avanzado — mezclar conversación y dónde trabaja",
   "from the conversation": "desde la conversación",
-  "Detected when you choose the conversation": "Se detecta al elegir la conversación"
+  "Detected when you choose the conversation": "Se detecta al elegir la conversación",
+  "Last night": "Anoche",
+  "Overnight": "Durante la noche",
+  "Scheduler health": "Salud del planificador",
+  "In progress": "En curso",
+  "Nothing ran in this window.": "No se ejecutó nada en esta ventana.",
+  "Registered": "Registrada",
+  "Trigger missing — re-save the task": "Falta el disparador — vuelve a guardar la tarea",
+  "Next": "Próxima",
+  "missed": "perdidos",
+  "pending": "pendientes",
+  "All triggers registered.": "Todos los disparadores registrados.",
+  "No scheduled tasks.": "No hay tareas programadas."
 }

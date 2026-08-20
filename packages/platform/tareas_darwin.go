@@ -22,6 +22,10 @@ func RegistrarTarea(taskID, comando, argumentos string, spec EspecDisparador) er
 }
 
 func RetirarTarea(taskID string) error   { return dwin.Unregister(taskID) }
+
+// TareaExiste dice si el LaunchAgent de esta tarea sigue presente. Id CRUDO
+// (dwin.Exists ya envuelve con el label); el nombre completo daría siempre false.
+func TareaExiste(taskID string) bool { return dwin.Exists(taskID) }
 func NombreDeTarea(taskID string) string { return dwin.NombreTarea(taskID) }
 func AvisoReactivacion() string          { return dwin.AvisoReactivacion() }
 

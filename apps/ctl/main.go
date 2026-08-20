@@ -127,10 +127,67 @@ func main() {
 		agentes(out)
 	case "entorno":
 		entorno(out, cfg)
+	case "resumen":
+		resumen(out, db, resto[1:])
 	default:
 		uso()
 		os.Exit(2)
 	}
+}
+
+// resumen: «lo que pasó anoche» (ventana móvil --horas, 16 por defecto) + salud
+// del planificador por tarea. La comprobación honesta es `platform.TareaExiste`:
+// un disparador del SO que se desregistró se marca aquí (registrada=false).
+func resumen(out salida, db *store.DB, args []string) {
+	fs := flag.NewFlagSet("resumen", flag.ExitOnError)
+	horas := fs.Int("horas", 16, "ventana de «anoche» en horas hacia atrás")
+	fs.Parse(args)
+	ahora := time.Now().UTC()
+	res, err := db.ResumenNoche(ahora.Add(-time.Duration(*horas) * time.Hour).Format(time.RFC3339))
+	if err != nil {
+		out.fallo(err)
+	}
+	base, err := db.SaludBase(ahora.AddDate(0, 0, -7).Format(time.RFC3339))
+	if err != nil {
+		out.fallo(err)
+	}
+	type saludJSON struct {
+		TareaID          string `json:"tarea_id"`
+		Tarea            string `json:"tarea"`
+		Registrada       bool   `json:"registrada"`
+		ProximaLocal     string `json:"proxima_local"`
+		DisparosPerdidos int    `json:"disparos_perdidos"`
+		Pendientes       int    `json:"pendientes"`
+	}
+	salud := []saludJSON{}
+	for _, b := range base {
+		reg := platform.TareaExiste(b.TareaID) // id CRUDO, no os_trigger_id (se doble-envolvería)
+		prox := ""
+		// Sin disparador registrado la «próxima» sería una hora falsa que nunca
+		// llega, así que solo se calcula cuando de verdad está registrada.
+		if reg {
+			if t, err := db.GetTask(b.TareaID); err == nil && t.Enabled {
+				var r scheduler.Rule
+				if json.Unmarshal([]byte(t.ScheduleRule), &r) == nil {
+					if occ, err := scheduler.Next(r, t.Timezone, ahora); err == nil && occ != nil {
+						prox = occ.ResolvedLocal
+					}
+				}
+			}
+		}
+		salud = append(salud, saludJSON{b.TareaID, b.Tarea, reg, prox, b.DisparosPerdidos, b.Pendientes})
+	}
+	out.ok(map[string]any{"resumen": res, "salud": salud}, func() {
+		fmt.Printf("anoche: %d terminadas · %d esperan · %d fallidas · %d saltadas · %d en curso · %.2f USD\n",
+			res.Terminadas, res.EsperanRevision, res.Fallidas, res.Saltadas, res.EnCurso, res.CosteTotalUSD)
+		for _, s := range salud {
+			estado := "ok"
+			if !s.Registrada {
+				estado = "SIN DISPARADOR"
+			}
+			fmt.Printf("  %-24s %-16s perdidos:%d pendientes:%d\n", s.Tarea, estado, s.DisparosPerdidos, s.Pendientes)
+		}
+	})
 }
 
 func uso() {
@@ -158,6 +215,7 @@ func uso() {
   archivar  <id-ejecucion>      saca de la bandeja una ejecucion fallida o sin cambios; limpia su worktree
   agentes                       qué agentes hay instalados y dónde
   entorno                       rutas y avisos de esta máquina
+  resumen   [--horas n]         resumen de anoche + salud del planificador
   version`)
 }
 

@@ -7,6 +7,10 @@
 
 
 
+## 0.6.0 — 2026-08-20
+
+- **Resumen de anoche + salud del planificador.** Un panel nuevo («Anoche», también desde la bandeja) resume de un vistazo lo que corrió mientras no estabas —terminadas, esperando revisión, fallidas, saltadas, en curso y coste— y, sobre todo, detecta el **fallo silencioso**: si el disparador de una tarea en el sistema operativo se ha desregistrado, lo marca en rojo («falta el disparador»); también cuenta los disparos perdidos por retraso. Se abre solo una vez al día, al lado y sin robar el foco, si hubo actividad.
+
 ## 0.5.0 — 2026-08-20
 
 - **Crear una tarea empieza por la intención.** El panel abre con dos atajos —**«En una conversación»** (continúa una conversación; el trabajo queda en su chat) y **«Tarea aislada en un repo»** (worktree que revisas)— que fijan por ti los dos ejes (conversación × dónde trabaja). Con «En una conversación» el repositorio lo pone la propia conversación (autodetección de carpeta), y sobra elegirlo a mano. Un enlace **«Avanzado»** revela los dos ejes por separado para mezclarlos (p. ej. continuar + aislada).

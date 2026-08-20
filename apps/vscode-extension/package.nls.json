@@ -7,6 +7,7 @@
   "welcome.inbox": "Nothing waiting for you.\n\nWhen a scheduled task finishes, its result appears here with the diff, the tests and two buttons: accept into your branch or throw it away.\n\n[New task](command:taskkeeper.newTask)",
   "welcome.tasks": "No tasks yet.\n\nA task runs Claude Code or Codex on a schedule, inside its own Git worktree, so your repository is never touched until you review.\n\n[New task](command:taskkeeper.newTask)\n[Get started (guided tour)](command:taskkeeper.getStarted)",
   "cmd.getStarted": "Get Started (Tutorial)",
+  "cmd.showDigest": "Last night (digest + scheduler health)",
   "cmd.newTask": "New Task",
   "cmd.refresh": "Refresh",
   "cmd.runNow": "Run Now",

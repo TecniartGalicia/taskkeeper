@@ -7,6 +7,7 @@
   "welcome.inbox": "Nada pendiente.\n\nCuando una tarea programada termine, su resultado aparecerá aquí con el diff, los tests y dos botones: aceptar en tu rama o descartar.\n\n[Nueva tarea](command:taskkeeper.newTask)",
   "welcome.tasks": "Todavía no hay tareas.\n\nUna tarea ejecuta Claude Code o Codex a la hora que elijas, dentro de su propio worktree de Git, así que tu repositorio no se toca hasta que revises.\n\n[Nueva tarea](command:taskkeeper.newTask)\n[Empezar (tutorial guiado)](command:taskkeeper.getStarted)",
   "cmd.getStarted": "Empezar (tutorial)",
+  "cmd.showDigest": "Anoche (resumen + salud del planificador)",
   "cmd.newTask": "Nueva tarea",
   "cmd.refresh": "Actualizar",
   "cmd.runNow": "Ejecutar ahora",

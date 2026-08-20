@@ -170,6 +170,29 @@ export function formatCost(usd: number | null | undefined): string {
   return `${usd.toFixed(2)} USD`;
 }
 
+// §27.1 — resumen matinal + salud del planificador.
+export interface DigestSummary {
+  desde_utc: string;
+  terminadas: number;
+  esperan_revision: number;
+  fallidas: number;
+  saltadas: number;
+  en_curso: number;
+  coste_total_usd: number;
+}
+export interface HealthTask {
+  tarea_id: string;
+  tarea: string;
+  registrada: boolean; // el disparador del SO sigue registrado
+  proxima_local: string;
+  disparos_perdidos: number;
+  pendientes: number;
+}
+export interface Digest {
+  resumen: DigestSummary;
+  salud: HealthTask[];
+}
+
 /** "2026-08-25T03:15" or RFC3339 → short local time for a list. */
 export function shortTime(iso: string): string {
   if (!iso) return '';

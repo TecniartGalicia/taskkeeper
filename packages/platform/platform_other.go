@@ -26,6 +26,7 @@ func RegistrarTarea(taskID, comando, argumentos string, spec EspecDisparador) er
 	return errNoSoportado
 }
 func RetirarTarea(taskID string) error                                 { return errNoSoportado }
+func TareaExiste(taskID string) bool                                   { return false }
 func RegistrarReintento(worker, taskID string, cuando time.Time) error { return errNoSoportado }
 func NombreDeTarea(taskID string) string                               { return "taskkeeper-" + taskID }
 func LanzarWorker(worker, taskID string, cuando time.Time) error       { return errNoSoportado }

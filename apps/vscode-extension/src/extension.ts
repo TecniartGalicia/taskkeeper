@@ -10,6 +10,7 @@ import { FileItem, HistoryProvider, InboxProvider, RunItem, TaskItem, TasksProvi
 import { runNewTaskWizard } from './ui/wizard';
 import { openTaskPanel } from './ui/taskPanel';
 import { openRunView, refreshOpenRunView, initRunView } from './ui/runView';
+import { openDigestView, refreshOpenDigest } from './ui/digestView';
 
 const t = vscode.l10n.t;
 
@@ -72,6 +73,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       context.subscriptions.push({ dispose: watchMarker(env.marca, () => {
         onMarker(inbox, refreshAll);
         if (ctl) refreshOpenRunView(ctl);
+        if (ctl) refreshOpenDigest(ctl);
       }) });
       if (env.aviso_reactivacion) log(`wake: ${env.aviso_reactivacion}`);
     } catch (e) {
@@ -318,6 +320,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // foco, como la página de bienvenida de VS Code). Solo ocurre una vez.
     void vscode.commands.executeCommand('workbench.action.openWalkthrough', walkId, false)
       .then(undefined, (e) => log(`walkthrough: ${(e as Error).message}`));
+  }
+
+  // §27.1 — Resumen de anoche.
+  reg('taskkeeper.showDigest', async () => {
+    await openDigestView(need());
+  });
+  // Auto-apertura una vez al día si hubo actividad; al lado y SIN robar el foco.
+  // Requiere binarios (ctl); en plataformas sin ellos no se intenta.
+  if (ctl) {
+    const c = ctl;
+    void (async () => {
+      try {
+        const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD local
+        if (context.globalState.get<string>('taskkeeper.digestShownDate') === today) return;
+        const d = await c.digest();
+        const r = d.resumen;
+        const activity = r.terminadas + r.esperan_revision + r.fallidas + r.saltadas + r.en_curso;
+        if (activity <= 0) return;
+        await context.globalState.update('taskkeeper.digestShownDate', today);
+        await openDigestView(c, { beside: true, preserveFocus: true });
+      } catch (e) {
+        log(`digest auto-open: ${(e as Error).message}`);
+      }
+    })();
   }
 
   refreshAll();
