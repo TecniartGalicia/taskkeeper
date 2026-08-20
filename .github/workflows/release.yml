@@ -7,15 +7,15 @@ name: Release
 # Re-running after a partial failure is safe: an "already exists / already published" for a
 # given (version, target) is treated as success.
 #
-# Windows always ships. macOS (darwin-x64 / darwin-arm64) is built, code-signed with the
-# Developer ID certificate and notarized, but only PUBLISHED when the repository variable
+# Windows always ships. macOS (darwin-x64 / darwin-arm64) is built and code-signed with the
+# Developer ID certificate (not notarized — the extension strips com.apple.quarantine from
+# the helper binaries at install), but only PUBLISHED when the repository variable
 # PUBLISH_MACOS is set to 'true' — flip it on after a real-Mac runtime check and a short beta.
 #
 # Required repository secrets:
 #   VSCE_PAT, OVSX_PAT                              (Marketplace + Open VSX tokens)
-#   APPLE_CERT_P12_BASE64, APPLE_CERT_PASSWORD      (Developer ID Application cert + password)
-#   APPLE_API_KEY_P8_BASE64, APPLE_API_KEY_ID,
-#   APPLE_API_ISSUER_ID, APPLE_TEAM_ID             (App Store Connect API key for notarization)
+#   APPLE_CERT_P12_BASE64, APPLE_CERT_PASSWORD, APPLE_TEAM_ID   (Developer ID signing)
+# The APPLE_API_* secrets are kept for a future notarization step but are currently unused.
 # Optional repository variable:
 #   PUBLISH_MACOS = 'true'                          (turns on macOS publishing)
 on:
@@ -85,7 +85,7 @@ jobs:
           - { target: darwin-x64, os: macos-latest }
           - { target: darwin-arm64, os: macos-latest }
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 25
     # A leg is ACTIVE when it is Windows, or when it is macOS and publishing is turned on.
     # Inactive legs skip every step (green no-op).
     env:
@@ -132,23 +132,21 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions "$KC" >/dev/null
           security find-identity -v -p codesigning "$KC"
           rm -f cert.p12
-      - name: Sign + notarize the macOS binaries
+      # Developer ID signature (not notarized): the extension strips
+      # com.apple.quarantine from the helper binaries on macOS, so Gatekeeper does
+      # not evaluate them; the signature still proves origin and integrity.
+      # (Notarizing loose CLI binaries kept Apple's notary "In Progress" past the
+      # job timeout, so it is intentionally left out for the preview.)
+      - name: Sign the macOS binaries (Developer ID)
         if: env.ACTIVE == 'true' && startsWith(matrix.target, 'darwin')
         env:
-          P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
-          KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           IDENTITY="Developer ID Application: Tecniart Galicia S.L. ($TEAM_ID)"
           for b in bin/${{ matrix.target }}/taskkeeper-worker bin/${{ matrix.target }}/taskkeeper-ctl; do
-            codesign --force --options runtime --timestamp --sign "$IDENTITY" "$b"
+            codesign --force --timestamp --sign "$IDENTITY" "$b"
             codesign --verify --strict --verbose=2 "$b"
           done
-          printf '%s' "$P8_BASE64" | openssl base64 -d -A > key.p8
-          ditto -c -k --keepParent "bin/${{ matrix.target }}" notarize.zip
-          xcrun notarytool submit notarize.zip --key key.p8 --key-id "$KEY_ID" --issuer "$ISSUER" --team-id "$TEAM_ID" --wait
-          rm -f key.p8 notarize.zip
       # --- package + publish this target ---
       - name: Package ${{ matrix.target }}
         if: env.ACTIVE == 'true'

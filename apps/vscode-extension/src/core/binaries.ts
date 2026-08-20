@@ -9,6 +9,7 @@
 // changes name on every update (…/argalla.taskkeeper-0.1.0 → -0.2.0). We hit
 // exactly that problem with claude and codex in Phase 0 — their path dies on
 // every update. Ours must not.
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -87,6 +88,23 @@ export function ensureInstalled(extensionPath: string, log: (s: string) => void 
     } catch (e) {
       log(`could not update ${n}: ${(e as Error).message}`);
       if (!fs.existsSync(to)) throw e;
+    }
+    // POSIX: the exec bit is not preserved through the VSIX, so set it every time.
+    // macOS: the binaries are Developer ID signed but not notarized, so strip any
+    // quarantine attribute (best-effort) to keep Gatekeeper from blocking them.
+    if (process.platform !== 'win32') {
+      try {
+        fs.chmodSync(to, 0o755);
+      } catch (e) {
+        log(`chmod ${n}: ${(e as Error).message}`);
+      }
+      if (process.platform === 'darwin') {
+        try {
+          execFileSync('xattr', ['-d', 'com.apple.quarantine', to], { stdio: 'ignore' });
+        } catch {
+          /* not quarantined: nothing to remove */
+        }
+      }
     }
   }
   return { ctl: path.join(dir, `taskkeeper-ctl${EXE}`), worker: path.join(dir, `taskkeeper-worker${EXE}`), dir };

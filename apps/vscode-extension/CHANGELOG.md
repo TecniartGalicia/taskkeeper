@@ -7,6 +7,10 @@
 
 
 
+## 0.8.4 — 2026-08-20
+
+- **macOS operativo (preview).** Los binarios de Mac se publican **firmados con Developer ID**; la extensión, al instalarlos, les da permiso de ejecución y quita el atributo de cuarentena para que se abran sin bloqueos. (Se deja la notarización de Apple para más adelante: con binarios sueltos se quedaba «en proceso» más allá del límite del CI.)
+
 ## 0.8.3 — 2026-08-20
 
 - Primera publicación con las tres plataformas: Windows y **macOS (Apple Silicon + Intel)**, con los binarios firmados y notarizados. (0.8.2 salió solo para Windows por un fallo de firma en el CI, ya corregido.)
