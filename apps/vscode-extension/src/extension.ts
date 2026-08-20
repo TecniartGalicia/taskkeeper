@@ -197,7 +197,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const id = item?.task.id ?? (await pickTaskId(c));
     if (!id) return;
     const name = item?.task.nombre ?? id;
-    const ok = await vscode.window.showWarningMessage(t('Delete "{0}" and its schedule? Past runs and their worktrees are kept.', name), { modal: true }, t('Delete'));
+    const ok = await vscode.window.showWarningMessage(t('Delete "{0}"? This removes the task, its schedule and its run history. Runs waiting for your review must be resolved first.', name), { modal: true }, t('Delete'));
     if (ok !== t('Delete')) return;
     await c.delete(id);
     refreshAll();

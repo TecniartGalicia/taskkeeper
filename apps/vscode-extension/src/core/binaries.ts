@@ -70,28 +70,30 @@ export function ensureInstalled(extensionPath: string, log: (s: string) => void 
   for (const n of names) {
     const from = path.join(src, n);
     const to = path.join(dir, n);
-    if (fileEqual(from, to)) continue;
-    try {
-      // Copy to a temp name and rename: atomic on the same volume, and if the
-      // old worker is running the rename fails instead of corrupting it.
-      const tmp = `${to}.new`;
-      fs.copyFileSync(from, tmp);
+    if (!fileEqual(from, to)) {
       try {
-        fs.renameSync(tmp, to);
+        // Copy to a temp name and rename: atomic on the same volume, and if the
+        // old worker is running the rename fails instead of corrupting it.
+        const tmp = `${to}.new`;
+        fs.copyFileSync(from, tmp);
+        try {
+          fs.renameSync(tmp, to);
+        } catch (e) {
+          // On Windows a running exe cannot be replaced. Keep the old one; the
+          // next activation retries. ctl still works because it is short-lived.
+          fs.rmSync(tmp, { force: true });
+          throw e;
+        }
+        log(`installed ${n} → ${to}`);
       } catch (e) {
-        // On Windows a running exe cannot be replaced. Keep the old one; the
-        // next activation retries. ctl still works because it is short-lived.
-        fs.rmSync(tmp, { force: true });
-        throw e;
+        log(`could not update ${n}: ${(e as Error).message}`);
+        if (!fs.existsSync(to)) throw e;
       }
-      log(`installed ${n} → ${to}`);
-    } catch (e) {
-      log(`could not update ${n}: ${(e as Error).message}`);
-      if (!fs.existsSync(to)) throw e;
     }
-    // POSIX: the exec bit is not preserved through the VSIX, so set it every time.
-    // macOS: the binaries are Developer ID signed but not notarized, so strip any
-    // quarantine attribute (best-effort) to keep Gatekeeper from blocking them.
+    // POSIX: the exec bit is not preserved through the VSIX, and can be lost by a
+    // Time Machine / Migration Assistant copy, so ensure it EVERY activation — not
+    // only when the file changed. macOS: the binaries are Developer ID signed but
+    // not notarized, so strip any quarantine attribute (best-effort).
     if (process.platform !== 'win32') {
       try {
         fs.chmodSync(to, 0o755);

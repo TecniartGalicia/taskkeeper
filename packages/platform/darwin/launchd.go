@@ -131,6 +131,10 @@ func renderPlist(label, comando, argumentos string, spec EspecDisparador) (strin
   </array>
   <key>RunAtLoad</key><false/>
 ` + cal + `
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
   <key>ProcessType</key><string>Background</string>
 </dict>
 </plist>

@@ -550,8 +550,10 @@ func (db *DB) Audit(runID, taskID, actor, action, detailJSON string) error {
 	if taskID != "" {
 		t = taskID
 	}
+	// El detalle suele ser un error de git/agente; puede traer una URL de remoto
+	// con credencial embebida, así que se redacta como cualquier otra evidencia.
 	_, err := db.Exec(`INSERT INTO audit (run_id,task_id,at,actor,action,detail_json) VALUES (?,?,?,?,?,?)`,
-		r, t, Now(), actor, action, jsonDetail(detailJSON))
+		r, t, Now(), actor, action, jsonDetail(redact.String(detailJSON)))
 	return err
 }
 
@@ -623,6 +625,7 @@ func isUniqueViolation(err error) bool {
 	if err == nil {
 		return false
 	}
-	s := strings.ToLower(err.Error())
-	return strings.Contains(s, "unique constraint") || strings.Contains(s, "constraint failed")
+	// Solo el UNIQUE: el genérico "constraint failed" también casa con FOREIGN KEY,
+	// y tratar un fallo de FK real como «duplicado» enmascararía corrupción.
+	return strings.Contains(strings.ToLower(err.Error()), "unique constraint")
 }

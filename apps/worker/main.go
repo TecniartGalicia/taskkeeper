@@ -97,6 +97,7 @@ func main() {
 	}
 	o.DirTurnos = cfg.DirTurnos
 	o.DirWorktrees = cfg.DirWorktrees
+	o.DirPerfiles = cfg.DirPerfiles
 
 	// Sin --occurrence ni --manual, la hora prevista se deriva de la regla: el
 	// disparador del sistema no nos dice de qué hora venimos.

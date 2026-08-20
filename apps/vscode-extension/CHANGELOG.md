@@ -7,6 +7,13 @@
 
 
 
+## 0.8.5 — 2026-08-20
+
+- **Refuerzo de permisos (importante).** Las tareas de Claude Code ahora arrancan con un **perfil de permisos controlado** que tu configuración personal de Claude no puede ampliar: aunque tengas permisos amplios o «bypass» activados para tu uso interactivo, una tarea de solo lectura sigue siendo de solo lectura, y una de cambios aislados no puede salir a la red (se bloquea WebFetch/WebSearch) ni hacer push/merge. Antes, una tarea desatendida podía heredar tus permisos amplios.
+- **Borrado más seguro.** Ya no puedes borrar una tarea con ejecuciones esperando tu revisión (dejaría trabajo huérfano en disco); el aviso de borrado dice la verdad de lo que se elimina.
+- **macOS más robusto.** El disparador nocturno de macOS ya lleva un `PATH` con Homebrew, así que el agente encuentra git/node/npm; el permiso de ejecución de los binarios se reasegura en cada arranque.
+- Redactado también el detalle de auditoría (por si un error de git trae una URL con credencial); corregido un caso en que un fallo de integridad de la base se confundía con un duplicado.
+
 ## 0.8.4 — 2026-08-20
 
 - **macOS operativo (preview).** Los binarios de Mac se publican **firmados con Developer ID**; la extensión, al instalarlos, les da permiso de ejecución y quita el atributo de cuarentena para que se abran sin bloqueos. (Se deja la notarización de Apple para más adelante: con binarios sueltos se quedaba «en proceso» más allá del límite del CI.)

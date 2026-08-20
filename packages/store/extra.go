@@ -420,6 +420,17 @@ func (db *DB) CuentaDependientes(taskID string) (int, error) {
 	return n, err
 }
 
+// CuentaRunsPendientes cuenta ejecuciones de la tarea que esperan tu decisión
+// (awaiting_review) o siguen vivas. Borrar la tarea con estas pendientes dejaría
+// worktrees huérfanos en disco (nunca se descartan) y perdería el registro
+// revisable, así que se bloquea el borrado hasta resolverlas.
+func (db *DB) CuentaRunsPendientes(taskID string) (int, error) {
+	var n int
+	err := db.QueryRow(`SELECT COUNT(*) FROM runs WHERE task_id=? AND status IN
+		('awaiting_review','queued','preflight','running','verifying')`, taskID).Scan(&n)
+	return n, err
+}
+
 // ---------- gasto (§27.2) ----------
 
 type GastoTarea struct {

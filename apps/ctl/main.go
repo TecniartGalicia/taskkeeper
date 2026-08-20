@@ -830,6 +830,11 @@ func borrar(out salida, db *store.DB, args []string) {
 	if n, err := db.CuentaDependientes(id); err == nil && n > 0 {
 		out.fallo(fmt.Errorf("%d tarea(s) dependen de esta; quítales la dependencia antes de borrarla", n))
 	}
+	// No borrar con ejecuciones pendientes de revisión o vivas: dejaría worktrees
+	// huérfanos y perdería el registro. El usuario debe resolverlas primero.
+	if n, err := db.CuentaRunsPendientes(id); err == nil && n > 0 {
+		out.fallo(fmt.Errorf("%d ejecución(es) de esta tarea esperan tu decisión o están en curso; acéptalas, recházalas o cancélalas antes de borrar", n))
+	}
 	if err := platform.RetirarTarea(id); err != nil && !out.json {
 		fmt.Fprintln(os.Stderr, "aviso al retirar el disparador:", err)
 	}

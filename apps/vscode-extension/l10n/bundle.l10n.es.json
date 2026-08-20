@@ -13,7 +13,6 @@
   "Save prompt": "Guardar prompt",
   "Discard": "Descartar",
   "Prompt saved as a new revision. Earlier runs keep the one they used.": "Prompt guardado como revisión nueva. Las ejecuciones anteriores conservan el que usaron.",
-  "Delete \"{0}\" and its schedule? Past runs and their worktrees are kept.": "¿Borrar «{0}» y su calendario? Las ejecuciones pasadas y sus worktrees se conservan.",
   "Delete": "Borrar",
   "Merge \"{0}\" into {1} on this machine? Nothing is pushed. {2} file(s) will change.": "¿Fundir «{0}» en {1} en este equipo? No se hace push. Cambiarán {2} fichero(s).",
   "Accept": "Aceptar",
@@ -295,5 +294,6 @@
   "after “{0}”": "tras «{0}»",
   "Runs after “{0}” ({1})": "Se ejecuta tras «{0}» ({1})",
   "Task updated. It runs after another task.": "Tarea actualizada. Se ejecuta tras otra tarea.",
-  "Task created. It runs after another task.": "Tarea creada. Se ejecuta tras otra tarea."
+  "Task created. It runs after another task.": "Tarea creada. Se ejecuta tras otra tarea.",
+  "Delete \"{0}\"? This removes the task, its schedule and its run history. Runs waiting for your review must be resolved first.": "¿Borrar «{0}»? Se elimina la tarea, su horario y su historial de ejecuciones. Las ejecuciones que esperan tu revisión deben resolverse antes."
 }

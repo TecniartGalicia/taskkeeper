@@ -25,6 +25,7 @@ type Opciones struct {
 	CupoSimultaneo int
 	DirTurnos      string
 	DirWorktrees   string
+	DirPerfiles    string // donde se escribe el settings.json controlado de Claude (§H1)
 	EsperaTurno    time.Duration
 	SondeoCancel   time.Duration
 	// Cuánto esperar para reintentar por cuota cuando el proveedor no dice
@@ -351,17 +352,31 @@ func Ejecutar(ctx context.Context, db *store.DB, d Deps, o Opciones,
 		sesionExterna = ref.ExternalID
 	}
 
+	// §H1 — perfil de permisos controlado: sin él, el settings.json del usuario
+	// (que puede tener bypassPermissions o un allow amplio) concedería al agente
+	// más de lo que el perfil pretende. Las reglas deny de este fichero ganan en
+	// todos los modos. Si falla al escribirlo, seguimos con --disallowedTools (que
+	// también deniega), pero se deja constancia.
+	var ficheroPerfil string
+	if o.DirPerfiles != "" {
+		if ruta, err := adapters.EscribirPerfil(o.DirPerfiles, adapters.Perfil(task.PermissionProfile)); err == nil {
+			ficheroPerfil = ruta
+		} else {
+			db.AppendEvent(run.ID, "aviso", `{"aviso":"no se pudo escribir el perfil de permisos controlado; se usa solo la denegación por CLI"}`)
+		}
+	}
 	cmd, err := ad.Comando(adapters.Peticion{
-		Prompt:         rev.Prompt,
-		Modo:           adapters.Modo(task.ConversationMode),
-		SesionExterna:  sesionExterna,
-		NuevaSesionID:  uuidDe(run.ID),
-		DirTrabajo:     proj.WorkspacePath,
-		Worktree:       rutaWorktree(wt),
-		Perfil:         adapters.Perfil(task.PermissionProfile),
-		MaxTurnos:      40,
-		MaxPresupuesto: nz(task.MaxBudgetUSD.Float64, task.MaxBudgetUSD.Valid),
-		Autocompact:    task.Autocompact,
+		Prompt:          rev.Prompt,
+		Modo:            adapters.Modo(task.ConversationMode),
+		SesionExterna:   sesionExterna,
+		NuevaSesionID:   uuidDe(run.ID),
+		DirTrabajo:      proj.WorkspacePath,
+		Worktree:        rutaWorktree(wt),
+		Perfil:          adapters.Perfil(task.PermissionProfile),
+		FicheroSettings: ficheroPerfil,
+		MaxTurnos:       40,
+		MaxPresupuesto:  nz(task.MaxBudgetUSD.Float64, task.MaxBudgetUSD.Valid),
+		Autocompact:     task.Autocompact,
 	})
 	if err != nil {
 		db.Transition(run.ID, store.StateFailed, err.Error())

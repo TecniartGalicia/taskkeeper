@@ -147,14 +147,42 @@ func (c *Claude) Comando(p Peticion) (*exec.Cmd, error) {
 func permisosClaude(perfil Perfil) (modo string, permitidas, prohibidas []string) {
 	switch perfil {
 	case PerfilAislado:
+		// Bash se permite (correr tests), pero se cierran los vectores de
+		// exfiltración/salida de la red además de push/merge/gh.
 		return "acceptEdits",
 			[]string{"Read", "Glob", "Grep", "Edit", "Write"},
-			[]string{"Bash(git push*)", "Bash(git merge*)", "Bash(gh *)"}
+			[]string{"Bash(git push*)", "Bash(git merge*)", "Bash(gh *)", "WebFetch", "WebSearch"}
 	default: // auditoría
 		return "default",
 			[]string{"Read", "Glob", "Grep"},
-			[]string{"Edit", "Write", "Bash"}
+			[]string{"Edit", "Write", "Bash", "WebFetch", "WebSearch"}
 	}
+}
+
+// perfilSettings es el settings.json controlado de cada perfil. Sus reglas `deny`
+// se aplican en TODOS los modos de Claude Code (incluido bypassPermissions) y
+// ganan sobre cualquier `allow` de la configuración del usuario, así que fijan un
+// suelo de permisos que el `~/.claude/settings.json` del usuario NO puede ampliar
+// —clave para una ejecución desatendida—. `defaultMode` refuerza al --permission-mode.
+func perfilSettings(perfil Perfil) string {
+	if perfil == PerfilAislado {
+		return `{"permissions":{"defaultMode":"acceptEdits","deny":["Bash(git push:*)","Bash(git merge:*)","Bash(gh:*)","WebFetch","WebSearch"]}}`
+	}
+	return `{"permissions":{"defaultMode":"default","deny":["Edit","Write","Bash","NotebookEdit","WebFetch","WebSearch"]}}`
+}
+
+// EscribirPerfil persiste el settings controlado del perfil en `dir` y devuelve su
+// ruta, para pasársela a Claude con --settings. Idempotente.
+func EscribirPerfil(dir string, perfil Perfil) (string, error) {
+	nombre := "auditoria.json"
+	if perfil == PerfilAislado {
+		nombre = "cambios_aislados.json"
+	}
+	ruta := filepath.Join(dir, nombre)
+	if err := os.WriteFile(ruta, []byte(perfilSettings(perfil)), 0o644); err != nil {
+		return "", err
+	}
+	return ruta, nil
 }
 
 type lineaClaude struct {
