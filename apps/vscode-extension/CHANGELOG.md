@@ -7,6 +7,10 @@
 
 
 
+## 0.8.3 — 2026-08-20
+
+- Primera publicación con las tres plataformas: Windows y **macOS (Apple Silicon + Intel)**, con los binarios firmados y notarizados. (0.8.2 salió solo para Windows por un fallo de firma en el CI, ya corregido.)
+
 ## 0.8.2 — 2026-08-20
 
 - **macOS (preview).** TaskKeeper empieza a publicarse también para Mac (Apple Silicon e Intel). Los binarios van **firmados con Developer ID y notarizados por Apple**, así que se abren sin avisos de Gatekeeper. Sigue en vista previa mientras se verifica el comportamiento en hardware real; los informes de usuarios de Mac son bienvenidos.

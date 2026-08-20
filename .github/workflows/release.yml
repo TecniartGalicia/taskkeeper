@@ -124,10 +124,13 @@ jobs:
           printf '%s' "$P12_BASE64" | openssl base64 -d -A > cert.p12
           KC="$RUNNER_TEMP/build.keychain"
           security create-keychain -p actions "$KC"
-          security default-keychain -s "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
           security unlock-keychain -p actions "$KC"
-          security import cert.p12 -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security import cert.p12 -k "$KC" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -T /usr/bin/codesign
+          # codesign searches the keychain SEARCH LIST, not just the default: add ours.
+          security list-keychain -d user -s "$KC" login.keychain-db
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions "$KC" >/dev/null
+          security find-identity -v -p codesigning "$KC"
           rm -f cert.p12
       - name: Sign + notarize the macOS binaries
         if: env.ACTIVE == 'true' && startsWith(matrix.target, 'darwin')
