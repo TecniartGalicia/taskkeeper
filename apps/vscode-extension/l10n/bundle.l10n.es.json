@@ -233,5 +233,7 @@
   "Open in the conversation": "Abrir en la conversación",
   "This conversation could not be opened.": "No se pudo abrir esta conversación.",
   "Open that folder": "Abrir esa carpeta",
-  "This conversation lives in {0}. Open that folder in VS Code to see it in the Claude Code chat.": "Esta conversación vive en {0}. Abre esa carpeta en VS Code para verla en el chat de Claude Code."
+  "This conversation lives in {0}. Open that folder in VS Code to see it in the Claude Code chat.": "Esta conversación vive en {0}. Abre esa carpeta en VS Code para verla en el chat de Claude Code.",
+  "Folder detected from the conversation": "Carpeta detectada de la conversación",
+  "This conversation exists in several folders — pick the right one:": "Esta conversación existe en varias carpetas — elige la correcta:"
 }

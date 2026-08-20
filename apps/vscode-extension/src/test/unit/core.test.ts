@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { createArgs, parseEnvelope, CtlError } from '../../core/ctl';
 import { formatCost, isActive, isFailed, runContext, stateIcon, type Run } from '../../core/model';
 import { describeRule, isValidHHMM, isValidLocalDateTime, parseRule } from '../../core/schedule';
-import { encodeCwd, listSessions, peekTitle } from '../../core/sessions';
+import { encodeCwd, listSessions, peekTitle, foldersForSession } from '../../core/sessions';
 import { watchMarker } from '../../core/watch';
 
 // ---------- ctl contract ----------
@@ -152,6 +152,28 @@ describe('claude session discovery', () => {
 
   it('returns nothing when the config dir does not exist', () => {
     assert.deepStrictEqual(listSessions('C:\\x', { CLAUDE_CONFIG_DIR: path.join(home, 'nope') }), []);
+  });
+
+  it('finds the real folder(s) a session id lives in, matching cwd to the encoded dir', () => {
+    const id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const f2 = fs.mkdtempSync(path.join(os.tmpdir(), 'tk-conv-'));
+    // Same id stored under two real folders (as a cross-folder resume would do).
+    for (const f of [home, f2]) {
+      const dir = path.join(home, 'projects', encodeCwd(f));
+      fs.mkdirSync(dir, { recursive: true });
+      // First line has a stale/original cwd; the matching one appears later.
+      fs.writeFileSync(
+        path.join(dir, `${id}.jsonl`),
+        JSON.stringify({ type: 'system', cwd: 'C:\\Somewhere\\Else' }) + '\n' + JSON.stringify({ type: 'system', cwd: f }) + '\n',
+      );
+    }
+    const cwds = foldersForSession(id, { CLAUDE_CONFIG_DIR: home }).map((l) => l.cwd).sort();
+    assert.deepStrictEqual(cwds, [home, f2].sort());
+    fs.rmSync(f2, { recursive: true, force: true });
+  });
+
+  it('returns nothing for an unknown session', () => {
+    assert.deepStrictEqual(foldersForSession('ffffffff-0000-0000-0000-000000000000', { CLAUDE_CONFIG_DIR: home }), []);
   });
 });
 

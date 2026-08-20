@@ -78,6 +78,91 @@ export function listSessions(cwd: string, env: NodeJS.ProcessEnv = process.env, 
   return top;
 }
 
+export interface SessionLocation {
+  cwd: string; // the real folder the session lives in
+  file: string;
+  lastModified: Date;
+}
+
+/**
+ * Finds the folder(s) a session id lives in, so the panel can set the project
+ * from the conversation instead of asking the user to pick it.
+ *
+ * A session file is stored under encodeCwd(cwd), and that encoding is lossy
+ * (every non-alphanumeric char becomes '-'), so the folder name cannot be
+ * decoded directly. Instead we confirm a candidate: inside the transcript, the
+ * `cwd` values are recorded, and the real folder is the one whose encoding
+ * equals the folder name. Usually one folder; a conversation resumed across
+ * folders can have several (newest first).
+ */
+export function foldersForSession(sessionId: string, env: NodeJS.ProcessEnv = process.env): SessionLocation[] {
+  if (!/^[0-9a-f-]{6,}$/i.test(sessionId)) return [];
+  const root = path.join(claudeConfigDir(env), 'projects');
+  let dirs: string[];
+  try {
+    dirs = fs.readdirSync(root);
+  } catch {
+    return [];
+  }
+  const out: SessionLocation[] = [];
+  for (const d of dirs) {
+    const file = path.join(root, d, `${sessionId}.jsonl`);
+    let st: fs.Stats;
+    try {
+      st = fs.statSync(file);
+    } catch {
+      continue;
+    }
+    const cwd = cwdMatchingDir(file, d);
+    if (cwd && isDir(cwd)) out.push({ cwd, file, lastModified: st.mtime });
+  }
+  out.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
+  return out;
+}
+
+function isDir(p: string): boolean {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** Scans a transcript for a `cwd` whose encoding equals the folder name. */
+function cwdMatchingDir(file: string, dirName: string, maxBytes = 20 * 1024 * 1024): string | undefined {
+  const want = dirName.toLowerCase();
+  let text: string;
+  try {
+    const st = fs.statSync(file);
+    const fd = fs.openSync(file, 'r');
+    try {
+      const size = Math.min(st.size, maxBytes);
+      const buf = Buffer.alloc(size);
+      fs.readSync(fd, buf, 0, size, 0);
+      text = buf.toString('utf8');
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return undefined;
+  }
+  const seen = new Set<string>();
+  for (const line of text.split('\n')) {
+    if (!line.includes('"cwd"')) continue;
+    let obj: any;
+    try {
+      obj = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const cwd = typeof obj?.cwd === 'string' ? obj.cwd : '';
+    if (!cwd || seen.has(cwd)) continue;
+    seen.add(cwd);
+    if (encodeCwd(cwd).toLowerCase() === want) return cwd;
+  }
+  return undefined;
+}
+
 /** Reads at most 64 KB looking for the first user message. Never throws. */
 export function peekTitle(file: string, maxBytes = 64 * 1024): string {
   try {

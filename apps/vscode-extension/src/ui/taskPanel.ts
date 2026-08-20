@@ -10,7 +10,7 @@ import * as vscode from 'vscode';
 import type { Ctl, CreateParams } from '../core/ctl';
 import type { Agent, Task } from '../core/model';
 import { parseRule, systemTimezone } from '../core/schedule';
-import { listSessions } from '../core/sessions';
+import { listSessions, foldersForSession } from '../core/sessions';
 
 const t = vscode.l10n.t;
 
@@ -106,6 +106,17 @@ export async function openTaskPanel(
           panel.webview.postMessage({
             type: 'sessions',
             list: list.map((s) => ({ id: s.id, title: s.title, when: s.lastModified.toLocaleString() })),
+          });
+          break;
+        }
+        case 'resolveSession': {
+          // From a session id, find the folder(s) the conversation lives in, so
+          // the project is set from the conversation instead of picked by hand.
+          const id = String(msg.id ?? '').trim();
+          const locs = id ? foldersForSession(id) : [];
+          panel.webview.postMessage({
+            type: 'sessionFolders',
+            folders: locs.map((l) => ({ cwd: l.cwd, name: path.basename(l.cwd) })),
           });
           break;
         }
@@ -237,6 +248,8 @@ function strings(): Record<string, string> {
     ctx_fork_d: t('Copies the context into a new conversation. Best for recurring work.'),
     which_conv: t('Which conversation?'),
     session_ph: t('Or paste a session id'),
+    folder_detected: t('Folder detected from the conversation'),
+    folder_multi: t('This conversation exists in several folders — pick the right one:'),
     workspace: t('Where it works'),
     ws_isolated: t('Isolated'),
     ws_isolated_d: t('Worktree from the base commit. You review before anything reaches your branch.'),
@@ -370,9 +383,10 @@ const el = (tag,props={},...kids)=>{const e=document.createElement(tag);Object.a
 let INIT=null, state={
   proyecto:'',proyectoNombre:'',isGit:true,nombre:'',agente:'',prompt:'',
   regla:'daily',horas:['03:00'],dias:[1],zona:'',perfil:'cambios_aislados',
-  modo:'new',sesion:'',politica:'skip',presupuesto:'',autocompact:'',workspace:'isolated',editing:false
+  modo:'new',sesion:'',politica:'skip',presupuesto:'',autocompact:'',workspace:'isolated',editing:false,
+  sessFolders:[]
 };
-let previewTimer=null;
+let previewTimer=null, resolveTimer=null;
 
 vscode.postMessage({type:'ready'});
 window.addEventListener('message',(ev)=>{
@@ -380,6 +394,7 @@ window.addEventListener('message',(ev)=>{
   if(m.type==='init'){ INIT=m; boot(m); }
   else if(m.type==='repoPicked'){ state.proyecto=m.path; state.proyectoNombre=m.name; state.isGit=m.isGit; render(); }
   else if(m.type==='sessions'){ renderSessions(m.list); }
+  else if(m.type==='sessionFolders'){ onSessionFolders(m.folders||[]); }
   else if(m.type==='previewResult'){ showPreview(m); }
   else if(m.type==='error'){ setErr('_form', m.message); }
 });
@@ -450,13 +465,25 @@ function render(){
   if(agent().retomar) modes.push(['resume',S.ctx_resume,S.ctx_resume_d,true]);
   if(agent().derivar) modes.push(['fork',S.ctx_fork,S.ctx_fork_d,true]);
   const seg=el('div',{className:'seg'});
-  modes.forEach(([mo,lbl])=>{ const b=el('button',{},lbl); if(state.modo===mo)b.classList.add('on'); b.addEventListener('click',()=>{ state.modo=mo; render(); updateSummary(); if(mo!=='new')requestSessions(); }); seg.append(b); });
+  modes.forEach(([mo,lbl])=>{ const b=el('button',{},lbl); if(state.modo===mo)b.classList.add('on'); b.addEventListener('click',()=>{ state.modo=mo; state.sessFolders=[]; render(); updateSummary(); if(mo!=='new')requestSessions(); }); seg.append(b); });
   const ctxWrap=el('div',{}, seg);
   if(state.modo!=='new'){
     const picker=el('div',{className:'picker',id:'sessPicker'}, el('div',{className:'opt'}, '…'));
     const idIn=el('input',{type:'text',placeholder:S.session_ph,value:state.sesion,style:'margin-top:9px'});
-    idIn.addEventListener('input',()=>{ state.sesion=idIn.value; setErr('sesion',''); });
+    idIn.addEventListener('input',()=>{ state.sesion=idIn.value; setErr('sesion',''); scheduleResolve(); });
     ctxWrap.append(picker, idIn);
+    // Carpeta detectada a partir del id de la conversación.
+    const sf=state.sessFolders||[];
+    if(sf.length===1){
+      ctxWrap.append(el('div',{style:'margin-top:8px;font-size:12px;color:var(--vscode-descriptionForeground)'}, S.folder_detected+': '+sf[0].cwd));
+    } else if(sf.length>1){
+      const box=el('div',{style:'margin-top:8px;font-size:12px'});
+      box.append(el('div',{style:'color:var(--vscode-descriptionForeground);margin-bottom:5px'}, S.folder_multi));
+      const row=el('div',{className:'row'});
+      sf.forEach(f=>{ const b=el('button',{className:'chip'+(state.proyecto===f.cwd?' ':''),title:f.cwd},f.name); b.addEventListener('click',()=>{ setProyecto(f.cwd,f.name); render(); updateSummary(); }); row.append(b); });
+      box.append(row);
+      ctxWrap.append(box);
+    }
   }
   main.append(field(S.context, wrapErr('sesion', ctxWrap)));
   if(state.modo!=='new') requestSessions();
@@ -575,10 +602,17 @@ function wrapErr(key,node){ const w=el('div',{}); w.append(node); w.append(el('d
 function setErr(key,msg){ const e=document.getElementById('err_'+key)||document.getElementById('err__form'); if(e)e.textContent=msg||''; }
 
 function requestSessions(){ if(state.agente==='claude'&&state.proyecto) vscode.postMessage({type:'listSessions',agent:state.agente,cwd:state.proyecto}); }
+function setProyecto(cwd,name){ state.proyecto=cwd; state.proyectoNombre=name; state.isGit=true; }
+function scheduleResolve(){ clearTimeout(resolveTimer); resolveTimer=setTimeout(()=>{ const id=(state.sesion||'').trim(); if(id.length>=6) vscode.postMessage({type:'resolveSession',id}); },350); }
+function onSessionFolders(folders){
+  state.sessFolders=folders||[];
+  if(folders.length===1){ setProyecto(folders[0].cwd,folders[0].name); }
+  render(); updateSummary();
+}
 function renderSessions(list){
   const p=document.getElementById('sessPicker'); if(!p)return; p.innerHTML='';
   if(!list.length){ p.append(el('div',{className:'opt'}, STR.session_ph)); return; }
-  list.forEach(s=>{ const o=el('div',{className:'opt'+(state.sesion===s.id?' on':'')}); o.append(el('div',{},s.title||s.id)); o.append(el('div',{className:'m'}, s.id.slice(0,8)+' · '+s.when)); o.addEventListener('click',()=>{ state.sesion=s.id; const inp=p.parentElement.querySelector('input'); if(inp)inp.value=s.id; [...p.children].forEach(c=>c.classList.remove('on')); o.classList.add('on'); setErr('sesion',''); }); p.append(o); });
+  list.forEach(s=>{ const o=el('div',{className:'opt'+(state.sesion===s.id?' on':'')}); o.append(el('div',{},s.title||s.id)); o.append(el('div',{className:'m'}, s.id.slice(0,8)+' · '+s.when)); o.addEventListener('click',()=>{ state.sesion=s.id; state.sessFolders=[]; const inp=p.parentElement.querySelector('input'); if(inp)inp.value=s.id; [...p.children].forEach(c=>c.classList.remove('on')); o.classList.add('on'); setErr('sesion',''); }); p.append(o); });
 }
 
 function schedulePreview(){ clearTimeout(previewTimer); previewTimer=setTimeout(sendPreview,350); }
