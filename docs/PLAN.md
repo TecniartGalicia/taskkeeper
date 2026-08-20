@@ -775,3 +775,230 @@ Ejecutadas y auditadas. §25: transcript.ts puro (6 tests con eventos reales) + 
 ### Ajuste v0.3.1 — modo directo sin Git
 
 «En la conversación» (direct) ya no exige repositorio Git: `gitwt.ComprobarSuave` (solo carpeta existe; helper `raizGit` compartido con `Comprobar`), usado por `ctl crear` y el runner en modo directo; `editar` a aislado sobre carpeta sin git se rechaza al editar; el panel oculta el aviso «no es git» en directo. Auditado (4 hallazgos: docs, dedup, validación editar, swallow intencional). Tests: `TestComprobarSuave`, `TestDirectoSinGitFunciona`.
+
+> Nota de estado: §24-§26 publicadas (0.2.0-0.3.x). Después: **0.4.0** autodetección de carpeta desde el id de sesión (`sessions.ts::foldersForSession`); **0.5.0** creación por intención (dos atajos = presets sobre los ejes modo×workspace, `derivePreset`) + tutorial interactivo (Walkthrough nativo ES/EN, `contributes.walkthroughs`, SVG propio). El binario `editar` IGNORA `--proyecto` (verificado: `main.go` parte de `nueva := *base`).
+
+## 27. Plan auditado — Cinco mejoras (v0.6.0 → v0.8.0)
+
+Fecha 2026-08-20. Cinco mejoras priorizadas por encaje con la promesa («los agentes trabajan de noche; revisas por la mañana; nada toca tu repo hasta que aceptas; local-first»). Secuencia final (tras auditoría, v0.6.0 se dividió): **v0.6.0** = §27.1; **v0.6.1** = §27.2; **v0.7.0** = §27.3; **v0.8.0** = §27.4; pista paralela §27.5 (macOS/firma). Cada fase se audita antes de publicar por tag. Ver «Correcciones tras auditoría» al final.
+
+Principios que respetan las cinco: sin demonio (la extensión lo lee todo por `ctl --json`; la lógica pura vive en Go); nunca emojis (SVG propio/codicons); paridad ES/EN (`bundle.l10n.es.json` + `package.nls*.json`, `l10n-sync` 0/0); columnas nuevas SOLO en `store.migrar()`; comandos nuevos con el patrón `salida.ok/fallo` + struct con tags json. Anclas verificadas: `store.go`/`extra.go` (acceso a datos), `ctl/main.go` (dispatch + `ejecucionJSON`/`tareaJSON`/`opcionesTarea`/`registrar`), `runner.go` (estados terminales), `platform` (build-tags win/darwin, `LanzarWorker`/`RegistrarReintento`/`Exists`), `ctl.ts` (clase `Ctl`, `CreateParams`, `createArgs`), `trees.ts`/`model.ts`/`taskPanel.ts`.
+
+### 27.1 — Resumen matinal + salud del planificador (v0.6.0)
+
+**Objetivo.** El valor es «despiertas y revisas lo de la noche», pero sin demonio el fallo más grave es SILENCIOSO (máquina suspendida a las 03:00 → no disparó; o disparó y falló auth). Dos entregables: (a) **resumen de anoche** al abrir VS Code; (b) **vista de salud** que detecta disparos perdidos y —lo más valioso— tareas cuyo disparador del SO se ha desregistrado solo.
+
+**Store** (`packages/store/extra.go`):
+```go
+type ResumenNoche struct {
+    DesdeUTC        string  `json:"desde_utc"`
+    Terminadas      int     `json:"terminadas"`       // completed + accepted
+    EsperanRevision int     `json:"esperan_revision"` // awaiting_review
+    Fallidas        int     `json:"fallidas"`         // failed*
+    Saltadas        int     `json:"saltadas"`         // skipped (incluye misfire)
+    EnCurso         int     `json:"en_curso"`         // running/queued/preflight/verifying
+    CosteTotalUSD   float64 `json:"coste_total_usd"`
+}
+// Agrega las runs terminadas desde `desdeUTC` (RFC3339) más las que siguen en curso.
+func (db *DB) ResumenNoche(desdeUTC string) (ResumenNoche, error) {
+    r := ResumenNoche{DesdeUTC: desdeUTC}
+    rows, err := db.Query(`SELECT status, cost_usd FROM runs
+        WHERE finished_at >= ?1 OR status IN ('running','queued','preflight','verifying')`, desdeUTC)
+    if err != nil { return r, err }
+    defer rows.Close()
+    for rows.Next() {
+        var st string; var cost sql.NullFloat64
+        if err := rows.Scan(&st, &cost); err != nil { return r, err }
+        switch State(st) {
+        case StateCompleted, StateAccepted, StateRejected: r.Terminadas++ // resueltas (hecha/aceptada/descartada): reconcilia el coste
+        case StateAwaitingReview:           r.EsperanRevision++
+        case StateSkipped:                  r.Saltadas++
+        case StateRunning, StateQueued, StatePreflight, StateVerifying: r.EnCurso++
+        default: if strings.HasPrefix(st, "failed") { r.Fallidas++ } // cancelled cae aquí sin sumar (su coste ~0)
+        }
+        if cost.Valid { r.CosteTotalUSD += cost.Float64 }
+    }
+    return r, rows.Err()
+}
+// NOTA: extra.go hoy importa solo database/sql y errors → añadir "strings".
+// Por tarea Enabled: disparos perdidos (skipped POR MISFIRE) y pendientes manual en la ventana.
+// OJO: `skipped` lo generan tres caminos: misfire (runner.go:101), sin-turno-libre
+// (runner.go:157) y tope de gasto (§27.2). Contar por ESTADO daría falsos rojos:
+// se cuenta por MOTIVO leyendo la auditoría (action 'state_skipped' cuyo detalle
+// habla de «retraso», y 'pendiente_de_decision'). Además EXCLUYE tareas con
+// depends_on_task_id!='' (§27.4: sin disparador por diseño).
+type SaludBaseTarea struct { TareaID, Tarea string; DisparosPerdidos, Pendientes int }
+func (db *DB) SaludBase(desdeUTC string) ([]SaludBaseTarea, error) {
+    // SELECT t.id,t.name ... FROM tasks t WHERE t.enabled=1 AND COALESCE(t.depends_on_task_id,'')=''
+    // subconsultas a `audit` por run de la tarea: misfire (detalle LIKE '%retraso%') y 'pendiente_de_decision'.
+}
+```
+
+**Plataforma** (`packages/platform`): añadir `TareaExiste(taskID string) bool` por build-tag, delegando en lo que YA existe: `dwin.Exists` (darwin, `launchd.go:76`, `os.Stat` del plist) y `win.Exists` (`schtask.go:94`, `schtasks /Query /TN … .Run()==nil`, **ya testeado** `schtask_test.go:25,51`). OJO: Ambos **re-envuelven** con `NombreTarea(taskID)` (schtask.go:98, launchd.go:85), así que hay que pasarles el **id crudo** de la tarea, NO `os_trigger_id` (que se guarda ya como nombre completo, `main.go:317`): pasar el nombre completo lo doble-envuelve → siempre `false` → todo en rojo. Es la comprobación honesta: un disparador que se esfumó se pinta en rojo.
+
+**ctl** (`main.go`): `case "resumen"` → `resumen(out, db, cfg, args)`, flag `--horas` (int, default 16). Combina store + `platform`/`scheduler` (que el store no puede tocar):
+```go
+res, _ := db.ResumenNoche(desdeUTC)
+base, _ := db.SaludBase(hace7dUTC) // SaludBase EXCLUYE tareas con depends_on_task_id!='' (§27.4: sin disparador por diseño)
+type saludJSON struct{ TareaID, Tarea, ProximaLocal string `json:"..."`; Registrada bool `json:"registrada"`; DisparosPerdidos, Pendientes int `json:"..."` }
+var salud []saludJSON
+for _, b := range base {
+    reg := platform.TareaExiste(b.TareaID) // id CRUDO, no os_trigger_id (ver arriba)
+    prox := ""
+    if t,_ := db.GetTask(b.TareaID); t.Enabled && reg { // sin disparador registrado, la «próxima» sería una hora falsa: se omite
+        if o,_ := scheduler.Next(regla(t), t.Timezone, now); o != nil { prox = o.ResolvedLocal }
+    }
+    salud = append(salud, saludJSON{b.TareaID, b.Tarea, prox, reg, b.DisparosPerdidos, b.Pendientes})
+}
+out.ok(map[string]any{"resumen": res, "salud": salud}, func(){ /* texto */ })
+```
+Añadir línea a `uso()`.
+
+**Extensión**: `Ctl.digest(horas=16): Promise<{resumen,salud}>` (`this.call('resumen','--horas',String(horas))`). `src/ui/digestView.ts`: Webview (patrón `taskPanel.ts`, CSP+nonce) con «Anoche» (stat-tiles SVG + coste) y «Salud» (una fila por tarea; roja si `!registrada` o `disparos_perdidos>0`). Comando `taskkeeper.showDigest` + botón en `view/title` de la bandeja. **Auto-apertura una vez al día** si hay actividad: en `activate`, **dentro de `if (ctl)`** (en plataformas sin binarios `ctl` es undefined) y tras `refreshAll`, si `resumen.Terminadas+Fallidas+EsperanRevision>0` y `globalState 'digestShownDate' != hoy(local)` → abrir con `createWebviewPanel(..., { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true })` y guardar la fecha. OJO: `ViewColumn.Beside` a secas (como en runView.ts:39) **sí toma el foco**; hace falta el objeto con `preserveFocus:true` para no robarlo al arrancar. El precedente del walkthrough (extension.ts:314-321) respalda el *mecanismo* (globalState + comando en activate) pero abre CON foco a propósito — aquí se diverge conscientemente.
+
+**Riesgos / auditoría**: «anoche» = ventana móvil `--horas 16` (documentar, no «desde las 00:00»); `TareaExiste` en Windows puede tardar (timeout/cachear; darwin es `os.Stat`, barato); auto-apertura acotada a una/día con actividad. Tests: store (round-trip de contadores con runs sembradas + límite temporal), `TareaExiste` (win/darwin, inexistente→false), ctl (`resumen` emite el JSON), y unidad del render si se extrae puro.
+
+### 27.2 — Panel de gasto + tope mensual (v0.6.0)
+
+**Objetivo.** Convertir el coste (fuente de ansiedad) en algo visible y **controlable**: gasto por tarea/día/mes + un **tope mensual de máquina** que el worker respeta.
+
+**Store** (`extra.go`):
+```go
+type GastoTarea struct { TareaID, Tarea string `json:"..."`; Runs int `json:"runs"`; USD float64 `json:"usd"` }
+type GastoDia   struct { Dia string `json:"dia"`; USD float64 `json:"usd"` }
+func (db *DB) GastoMes(desdeMesUTC string) (float64, error)               // SUM(cost_usd) WHERE finished_at>=?
+func (db *DB) GastoPorTarea(desdeUTC string) ([]GastoTarea, error)        // GROUP BY task_id JOIN tasks
+func (db *DB) GastoPorDia(desdeUTC string) ([]GastoDia, error)            // GROUP BY substr(finished_at,1,10)
+```
+Tope mensual como ajuste de máquina (patrón `ClaveCupo`): `const ClaveTopeMes="monthly_budget_usd"`, `db.TopeMes() float64`, `db.FijarTopeMes(v float64)`.
+
+**Runner** (enforcement). OJO: Colocarlo **antes** de tomar el turno (`turns.Acquire`, runner.go:155) y de crear el worktree (runner.go:215-223): si se salta después, deja un **worktree huérfano** y consume un turno para nada. Punto correcto: justo tras `CreateRunIfAbsent` (estado `queued`; `queued→skipped` es válido, store.go:405), antes del preflight pesado. La variable de tiempo en `Ejecutar` es `ocurrencia`, no `ahora`:
+```go
+if tope := db.TopeMes(); tope > 0 {
+    if gasto, _ := db.GastoMes(inicioDeMesUTC(ocurrencia)); gasto >= tope {
+        db.Transition(run.ID, store.StateSkipped,
+            fmt.Sprintf("tope mensual de %.2f USD alcanzado (%.2f gastados)", tope, gasto))
+        return nil
+    }
+}
+```
+Tope **blando** (dos workers simultáneos podrían pasarse un poco; aceptable — evita el goteo, no un pico). `inicioDeMesUTC`, `db.TopeMes`, `db.GastoMes` son nuevos. **CONFIRMADO: `daily_budget_usd` NO se aplica hoy** (el runner solo pasa `MaxBudgetUSD` por-run, runner.go:263) → cablear también el diario aquí (SUM por `task_id` con `finished_at` de hoy). OJO: **CONFIRMADO: Codex NO reporta coste** (`codex.go` no rellena `CosteUSD`; solo `claude.go` desde `total_cost_usd`, claude.go:164,188) → en una máquina con tareas Codex el tope es **inoperante** (`GastoMes`≈0) y el panel infravalora. La UI debe avisar («coste informado; Codex no lo reporta») y advertir al fijar tope si hay tareas Codex.
+
+**ctl**: `case "gasto"` → `{mes_usd, tope_mes_usd, por_tarea, por_dia}`; `case "tope-mensual"` (get sin args / set con `<usd>`, patrón `cupo`).
+
+**Extensión**: `Ctl.spend()` + `Ctl.setMonthlyCap(usd)`. `src/ui/spendView.ts`: Webview con barra mes-vs-tope (color de aviso al acercarse), barras por día (SVG propio, sin librerías — regla de [dataviz]), tabla por tarea, y control del tope. Comando `taskkeeper.showSpend` + botón en `view/title`.
+
+**Riesgos / auditoría**: el coste solo se registra si el adaptador devuelve `CosteUSD` — **Codex puede no reportarlo** → el total infravalora; mostrarlo como «coste informado» y avisar (auditar `adapters/codex.go`). Mes por UTC (documentar). Race blanda aceptada. Tests: store (agregados + límites de fecha), tope (get/set meta), runner (`TestTopeMensualSalta`: tope 0.01 + gasto previo → run nueva `skipped` con motivo; sin tope corre), ctl round-trip.
+
+### 27.3 — Plantillas de tarea (v0.7.0)
+
+**Objetivo.** Bajar la barrera de la página en blanco (encaja con el tutorial): catálogo pequeño de tareas típicas que precargan nombre/prompt/perfil/workspace/horario. Casi todo frontend (el prompt es texto; perfil/workspace/regla ya son campos).
+
+**Datos** (`src/ui/templates.ts`, textos por `vscode.l10n.t`):
+```ts
+// dias es obligatorio para 'weekly' (si no, cae al [1]=lunes por defecto, ambiguo).
+export interface Plantilla { id:string; nombre:string; desc:string; prompt:string;
+  perfil:'auditoria'|'cambios_aislados'; workspace:'isolated'|'direct'; regla:'daily'|'weekly'; dias:number[]; horas:string[]; }
+// OJO: Comillas DOBLES en textos con apóstrofo (con comilla simple `week's` rompe
+// el literal y NO compila). NUNCA backticks: `l10n-sync` extrae por regex de
+// t('…')/t("…") y NO ve los template literals → quedarían sin traducir en silencio.
+// Multilínea: t("linea1\nlinea2"). `plantillas()` se llama en el HANDLER (al
+// construir `init`), no a nivel de módulo, o `t()` devolvería inglés sin bundle.
+export function plantillas(): Plantilla[] { return [
+  { id:'deps',     nombre:t('Update dependencies'), desc:t('…'), prompt:t("Check for outdated dependencies and open the updates in a worktree for review."), perfil:'cambios_aislados', workspace:'isolated', regla:'weekly', dias:[1], horas:['03:00'] },
+  { id:'changelog',nombre:t('Draft changelog'),     desc:t('…'), prompt:t("Summarise this week's merged changes into a changelog entry. Read only."),        perfil:'auditoria',        workspace:'isolated', regla:'weekly', dias:[5], horas:['08:00'] },
+  { id:'lint',     nombre:t('Lint sweep'),          desc:t('…'), prompt:t("Run the linter and fix what is safe, in a worktree for review."),                  perfil:'cambios_aislados', workspace:'isolated', regla:'daily',  dias:[],  horas:['03:00'] },
+  { id:'fixtests', nombre:t('Fix failing tests'),   desc:t('…'), prompt:t("Run the test suite; if anything fails, fix it in a worktree for review."),         perfil:'cambios_aislados', workspace:'isolated', regla:'daily',  dias:[],  horas:['03:00'] },
+  { id:'blank',    nombre:t('Blank'),               desc:t('Start from scratch.'), prompt:'', perfil:'cambios_aislados', workspace:'isolated', regla:'daily', dias:[], horas:['03:00'] },
+]; }
+```
+(4 plantillas + «en blanco»; las que cambian código, en `isolated` → siempre revisables; ninguna en «cambios directos».)
+
+**Panel** (`taskPanel.ts`): el host ya envía `promptTemplate` en `init` → se amplía a `plantillas` (resueltas con `t()` en el host). En `render()`, encima de «¿Qué tipo de tarea?», una fila de tarjetas «Plantilla»; al elegir, precarga `state.nombre/prompt/perfil/workspace/regla/horas` y recalcula `derivePreset(...)`. El usuario ajusta libremente. **Sin cambios de backend.**
+
+**Riesgos / auditoría**: prompts seguros y buenos (los que cambian código, isolated por defecto); localizar prompts multilínea por `bundle.l10n.es.json` (verifica `l10n-sync`); mantenerlo pequeño (5). Tests: unidad de que `plantillas()` devuelve valores en dominio (perfil/workspace válidos) y de que aplicar una plantilla fija el estado esperado (extraer a función pura); no-regresión (plantilla «en blanco» = hoy).
+
+### 27.4 — Encadenar tareas / acción ante fallo (v0.8.0) — la más compleja
+
+**Objetivo.** «Ejecuta B cuando A termine bien», «si A falla, reintenta o avísame».
+
+**Alcance v1 (acotado a un punto de despacho único):** el **padre debe ser modo directo** (`workspace_mode='direct'`), cuyo estado terminal (`completed`/`failed*`) lo fija el **worker** en un solo sitio. El encadenado desde padres **aislados** (donde «éxito» = el usuario *acepta*, y habría que despachar también en `ctl aceptar`) se deja como continuación. Evita dos puntos de despacho y semántica ambigua.
+
+**Store** (`migrar()` + métodos). Columnas nuevas SOLO en `migrar()`:
+```go
+"depends_on_task_id": "TEXT NOT NULL DEFAULT ''",
+"trigger_on":         "TEXT NOT NULL DEFAULT ''",   // success | failure | always
+```
+Campos en `store.Task`, en `GetTask`/`CreateTask`/`editar`. Método:
+```go
+// Tareas activas cuyo padre es taskID y cuyo disparo casa con el resultado; 'always' casa con todo.
+func (db *DB) DependientesDe(taskID, resultado string) ([]*Task, error) {
+    // SELECT id ... WHERE enabled=1 AND depends_on_task_id=? AND (trigger_on=? OR trigger_on='always')
+}
+```
+
+**Runner** (despacho). OJO: NO vale una llamada única al final de `Ejecutar`: hay ~15 `return nil` tempranos, y el éxito de **modo directo** —el caso objetivo— transiciona a `completed` y **retorna en runner.go:314-315**, no en :348 → se perdería todos los `completed` directos. Solución: un `defer` registrado **justo tras confirmar `creada`** (después de runner.go:152, capturando `run.ID`), que lea el estado FINAL con `db.GetRun(run.ID)` y despache:
+```go
+run, creada, err := db.CreateRunIfAbsent(...)
+if err != nil || !creada { return ... } // no despachar en el no-op de idempotencia ni con run==nil
+defer func() {
+    if r, e := db.GetRun(run.ID); e == nil { dispararDependientes(db, o, task.ID, r.Status) }
+}()
+// ...
+func dispararDependientes(db *store.DB, o Opciones, padreID string, estado store.State) {
+    var res string
+    switch {
+    case estado == store.StateCompleted: res = "success"
+    case estado == store.StateFailedQuota: return          // tiene reintento programado: no dispares fallo aún
+    case esFallo(estado):                res = "failure"    // failed / failed_verification / failed_auth
+    default: return                                         // skipped/cancelled/awaiting_review: v1 no encadena (padres aislados fuera)
+    }
+    deps, err := db.DependientesDe(padreID, res); if err != nil { return }
+    for _, dep := range deps {
+        if o.LanzarDependiente != nil { _ = o.LanzarDependiente(dep.ID) } // worker: platform.LanzarWorker(cfg.Worker, dep.ID, time.Now().UTC())
+    }
+}
+```
+`o.LanzarDependiente` (nuevo campo de `Opciones`) lo inyecta el worker como ya hace con `RegistrarReintento` (worker `main.go:83-85`). El dependiente arranca como ocurrencia manual nueva → su propia run idempotente. Que `skipped`/`cancelled`/`awaiting_review` caigan en `default→return` deja **correctamente** a los padres aislados fuera de v1.
+
+**Sin disparador propio (una tarea dependiente se dispara SOLO por el padre):** el salto del registro se hace en los **call-sites** de `registrar()` (su firma `(cfg,taskID,zona,r,occ)` no ve `depends_on`): `crear` (main.go:313), `editar` (main.go:393) **y `activar`/reanudar** (main.go:646) — si no, una dependiente pausada y reanudada volvería a registrar disparador. Y `crear` hace `SetOSTriggerID` incondicional (main.go:317): hacerlo **condicional** (no fijar id de disparador si es dependiente), o quedaría un `os_trigger_id` obsoleto. **Acople con §27.1:** las dependientes están `Enabled` pero sin disparador **por diseño** → `SaludBase` DEBE excluirlas (ya reflejado arriba), o toda dependiente saldría como falso rojo «desregistrado».
+
+**Prevención de ciclos (crítico):** con un solo padre (`depends_on_task_id`) el grafo es un bosque; solo `editar` puede cerrar un ciclo (al `crear`, la tarea nueva no tiene hijos). `ctl crear/editar` valida: el padre existe y, subiendo del padre propuesto a la raíz, no reaparece el id que se edita; profundidad máxima (p. ej. 10) como red secundaria.
+
+**ctl**: flags `--depende-de <taskID>` y `--disparar-en <success|failure|always>` en `parsearOpciones` (validación existencia+ciclos); `registrar` salta el disparador si hay dependencia; `aJSON` expone `depends_on_task_id`/`trigger_on`.
+
+**Extensión**: `CreateParams`+`createArgs`: `dependeDe?`/`dispararEn?` → `--depende-de`/`--disparar-en`. Panel (avanzado): selector «Se ejecuta después de… [tarea] · en [éxito/fallo/siempre]». OJO: **Contrato «sin horario»:** hoy `submit()` valida `horas`/`okTime` **incondicionalmente** (taskPanel.ts:740-745) y `toCreateParams` construye `hora` de `horas`; al fijar dependencia hay que **ramificar la validación** (saltar el check de hora) y decidir el contrato con `ctl crear` (aceptar `--regla`/`--hora` de una regla que `registrar` simplemente no registra, para no romper el modelo de la tarea). Sin esto, una dependiente **no se puede enviar**. **Vista de tareas: badge, NO anidar.** `TasksProvider.getChildren` es plano y `TaskItem.id = task:${id}` (trees.ts:13,37): anidar la misma tarea en raíz y bajo el padre **colisiona el id** (comportamiento impredecible) y **duplica** salvo filtrar la raíz. Para v1, un **badge** en `TaskItem.description` («tras "Padre" · éxito», con codicon `$(arrow-small-right)` no un carácter suelto si va como icono); el árbol jerárquico queda como continuación.
+
+**Riesgos / auditoría (mayor superficie):** ciclos → validación + test A→B→A rechazado; tormenta de fallos → acotación a padre directo + profundidad máxima; idempotencia → cada disparo del dependiente es ocurrencia manual «ahora», run nueva (correcto); padres aislados fuera de v1 (dejarlo claro en UI). Tests: store (migración; `DependientesDe` success/failure/always), ctl (ciclo rechazado; `registrar` salta disparador con dependencia), runner (`TestDispararDependientes` con `LanzarDependiente` falso: `completed`→success+always, `failed`→failure+always).
+
+### 27.5 — macOS + quitar preview + firma (pista paralela)
+
+**Estado.** macOS **ya está implementado**: `platform/tareas_darwin.go` + `platform/darwin/{launchd.go,group.go}` (launchd, plist, grupo de procesos), y `build-bin.mjs` cross-compila `darwin-x64`/`darwin-arm64`; el runtime ya es multiplataforma (`binaries.ts`). Falta empaquetado/publicación, verificación en hardware y firma.
+
+**Técnico (agente puede):**
+- **release.yml — reestructura en 3 jobs** (hoy es UN job monolítico con verify-tag/go-test/npm-check + build+publish de solo `win32-x64`). No es un añadido, es un refactor:
+  1. `verificar` (una vez): verify-tag, `go test ./...`, `npm run check`.
+  2. `publicar` (matriz `{win32-x64, darwin-x64, darwin-arm64}`, `needs: verificar`, `fail-fast: false`): `build-bin.mjs <target>` + `vsce publish --target <target>` + `ovsx publish --target <target>`.
+  3. `release` (una vez, `needs: publicar`): `gh release create` con los 3 VSIX.
+- OJO: **BLOQUEANTE — la idempotencia actual es por VERSIÓN, no por (versión,target).** `release.yml:67` salta si `versions.some(v.version===$VER)` y ovsx igual (`:82`). En una matriz de misma versión, en cuanto `win32-x64` publique vX, las patas darwin ven vX presente → **SKIP → darwin nunca se publica**. Hay que rehacer la comprobación por `(version, targetPlatform)` (vsce/ovsx exponen el target del paquete) o quitar el skip y confiar solo en el «already exists/published».
+- OJO: **CI solo compila darwin, no lo ejecuta.** CI corre en `ubuntu-latest`; `go test ./...` ahí compila el **stub** `!windows&&!darwin` (`platform_other.go`), NO `launchd.go`/`tareas_darwin.go`. `GOOS=darwin go build ./...` (lo hace build-bin) es **compile-check**, no test. Decir «compile-check», no «test multiplataforma»; el runtime darwin queda a verificación humana en Mac.
+- **Textos «preview» a quitar en GA** (más de los citados): `package.json:31` (`"preview": true`), `README.md:40` («Windows 10/11, x64 in this release…»), y `release.yml:98` (nota de release **hardcodeada** «Windows x64 preview»).
+- **Orden respecto a §27.1:** darwin GA debe ir **después** de que aterrice la rama darwin de `platform.TareaExiste` (§27.1), o los usuarios de Mac verían la vista de salud rota.
+
+**Humano (bloqueado):** verificación en Mac real (`launchctl`, despertar de suspensión, permisos LaunchAgent); **firma** — Authenticode (Windows, mata SmartScreen del worker) + Developer ID + notarización (Apple, para los binarios darwin). Requieren certificados del titular; sin ellos Gatekeeper bloquea el binario no firmado.
+
+**Riesgos / auditoría**: no publicar darwin como GA hasta verificar en Mac; el VSIX por plataforma no debe romper win32 (jobs separados, versión común); README debe marcar macOS como preview hasta firmar.
+
+### Secuencia y auditoría global
+Tras auditoría, se **divide v0.6.0**: §27.1+§27.2 juntos serían dos webviews nuevos + cambio de runner + primitiva OS nueva en un tag (demasiada superficie para «2-3 pasadas»). Secuencia final: **v0.6.0** = §27.1 · **v0.6.1** = §27.2 · **v0.7.0** = §27.3 · **v0.8.0** = §27.4 · pista paralela §27.5 (GA de macOS tras la rama darwin de §27.1 + Mac + certificados). Cada fase: afinar aquí → ejecutar → **auditar adversarial (2-3 pasadas)** → arreglar → `npm run check` verde + `go test ./...` → publicar por tag.
+
+OJO: **Paridad de manifiesto no automática:** `l10n-sync` solo valida `bundle.l10n.es.json` (strings `t()`), NO los `.nls`. Los comandos nuevos (`taskkeeper.showDigest`, `showSpend`) exigen `%cmd.showDigest%`/`%cmd.showSpend%` en `package.nls.json` Y `package.nls.es.json` a mano.
+
+### Correcciones tras auditoría (2 revisores adversariales)
+Backend (viabilidad Go) + Frontend/UX/alcance, contrastados contra el código real. Bloqueantes/altos ya corregidos arriba, en línea:
+- **§27.1 · `TareaExiste(id crudo)`**, no `os_trigger_id` (doble-envoltura → todo rojo). `win.Exists` YA existe y está testeado. `SaludBase` cuenta `skipped` por MOTIVO (no por estado; hay 3 orígenes) y excluye dependientes. `ResumenNoche` cuenta `rejected` (reconcilia el coste) y necesita `import "strings"`. Auto-abrir con `preserveFocus:true` dentro de `if(ctl)`. «Próxima» se omite si `!registrada`.
+- **§27.2 · Enforcement del tope ANTES del worktree/turno** (si no, worktree huérfano); var `ocurrencia`. Codex NO reporta coste → tope inoperante con Codex + panel infravalora (avisar en UI). `daily_budget_usd` confirmado sin aplicar → cablearlo aquí.
+- **§27.3 · Comillas dobles** en textos con apóstrofo (con simple NO compila); **nunca backticks** (invisibles a `l10n-sync`); `dias` obligatorio en `weekly`; `plantillas()` en el handler.
+- **§27.4 · Despacho por `defer`** tras `creada` (una llamada al final pierde los `completed` directos que retornan en :315). Excluir `failed_quota` (tiene reintento). Salto de `registrar` también en `activar`; `SetOSTriggerID` condicional. `SaludBase` excluye dependientes. UI: **badge, no anidar** (colisión de `id`); ramificar la validación de `submit()` para «sin horario».
+- **§27.5 · Idempotencia por (versión,target)** o darwin no se publica nunca; reestructurar en 3 jobs; CI solo compila darwin (compile-check); quitar «preview» también de `README.md:40` y `release.yml:98`.
+- **Alcance:** dividir v0.6.0/v0.6.1; darwin GA supeditada a §27.1.
