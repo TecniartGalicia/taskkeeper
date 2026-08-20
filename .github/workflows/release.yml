@@ -46,6 +46,18 @@ jobs:
         env:
           GOTOOLCHAIN: local
         run: go test ./...
+      # §27.5 — la plataforma macOS está escrita pero no se publica todavía (falta
+      # firma/notarización y verificación en hardware real). Aun así se COMPILA en
+      # cada release para que un cambio no la rompa en silencio; el runner de CI es
+      # Linux, así que esto es compile-check, no test de ejecución.
+      - name: Compile-check the macOS worker (built, not yet shipped)
+        working-directory: .
+        env:
+          GOOS: darwin
+          GOTOOLCHAIN: local
+        run: |
+          GOARCH=arm64 go build ./...
+          GOARCH=amd64 go build ./...
       - run: npm ci
       - name: Typecheck + lint + unit tests + l10n
         env:
