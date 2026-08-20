@@ -1,0 +1,37 @@
+<svg width="440" height="230" viewBox="0 0 440 230" fill="none" xmlns="http://www.w3.org/2000/svg" role="img">
+  <style>
+    .bd{stroke:var(--vscode-panel-border,#c9ccd6)}
+    .cardf{fill:var(--vscode-editorWidget-background,#ffffff)}
+    .mut{fill:var(--vscode-descriptionForeground,#9aa0b4)}
+  </style>
+  <rect x="1" y="1" width="438" height="228" rx="12" class="cardf bd"/>
+  <!-- left: conversation transcript -->
+  <rect x="24" y="24" width="180" height="182" rx="9" class="bd" fill="none"/>
+  <circle cx="44" cy="52" r="9" class="bd" fill="none"/>
+  <rect x="60" y="44" width="120" height="7" rx="3.5" class="mut"/>
+  <rect x="60" y="56" width="96" height="7" rx="3.5" class="mut"/>
+  <rect x="44" y="86" width="140" height="7" rx="3.5" fill="#4b50e0" fill-opacity="0.4"/>
+  <rect x="44" y="99" width="120" height="7" rx="3.5" fill="#4b50e0" fill-opacity="0.4"/>
+  <circle cx="44" cy="132" r="9" class="bd" fill="none"/>
+  <rect x="60" y="124" width="118" height="7" rx="3.5" class="mut"/>
+  <rect x="60" y="136" width="80" height="7" rx="3.5" class="mut"/>
+  <rect x="44" y="166" width="140" height="7" rx="3.5" fill="#4b50e0" fill-opacity="0.4"/>
+  <rect x="44" y="179" width="104" height="7" rx="3.5" fill="#4b50e0" fill-opacity="0.4"/>
+  <!-- right: diff to review -->
+  <rect x="236" y="24" width="180" height="182" rx="9" class="bd" fill="none"/>
+  <g>
+    <rect x="236" y="48" width="180" height="20" fill="#1c9a68" fill-opacity="0.12"/>
+    <path d="M252 58 h8 m-4 -4 v8" stroke="#1c9a68" stroke-width="2" stroke-linecap="round"/>
+    <rect x="270" y="54" width="120" height="7" rx="3.5" fill="#1c9a68" fill-opacity="0.55"/>
+    <rect x="236" y="84" width="180" height="20" fill="#b9770f" fill-opacity="0.12"/>
+    <path d="M252 94 h8" stroke="#b9770f" stroke-width="2" stroke-linecap="round"/>
+    <rect x="270" y="90" width="100" height="7" rx="3.5" fill="#b9770f" fill-opacity="0.55"/>
+    <rect x="270" y="122" width="130" height="7" rx="3.5" class="mut"/>
+    <rect x="270" y="140" width="110" height="7" rx="3.5" class="mut"/>
+  </g>
+  <!-- accept / reject -->
+  <rect x="252" y="168" width="72" height="26" rx="6" fill="#1c9a68" fill-opacity="0.16" stroke="#1c9a68" stroke-width="1.4"/>
+  <path d="M266 181 l5 5 l9 -10" stroke="#1c9a68" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="334" y="168" width="60" height="26" rx="6" class="bd" fill="none"/>
+  <path d="M352 175 l14 12 m0 -12 l-14 12" stroke="var(--vscode-descriptionForeground,#9aa0b4)" stroke-width="2" stroke-linecap="round"/>
+</svg>

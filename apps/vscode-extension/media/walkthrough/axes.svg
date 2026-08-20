@@ -1,0 +1,33 @@
+<svg width="440" height="230" viewBox="0 0 440 230" fill="none" xmlns="http://www.w3.org/2000/svg" role="img">
+  <style>
+    .bd{stroke:var(--vscode-panel-border,#c9ccd6)}
+    .cardf{fill:var(--vscode-editorWidget-background,#ffffff)}
+  </style>
+  <rect x="1" y="1" width="438" height="228" rx="12" class="cardf bd"/>
+  <!-- column glyphs: nueva / continuar / derivar (speech bubbles) -->
+  <g transform="translate(150,34)">
+    <g><path d="M0 6 h44 a6 6 0 0 1 6 6 v20 a6 6 0 0 1 -6 6 h-30 l-10 9 v-9 h-4 a6 6 0 0 1 -6 -6 v-20 a6 6 0 0 1 6 -6 z" class="bd" fill="none"/></g>
+    <g transform="translate(96,0)"><path d="M0 6 h44 a6 6 0 0 1 6 6 v20 a6 6 0 0 1 -6 6 h-30 l-10 9 v-9 h-4 a6 6 0 0 1 -6 -6 v-20 a6 6 0 0 1 6 -6 z" class="bd" fill="none"/><line x1="10" y1="17" x2="40" y2="17" class="bd"/><line x1="10" y1="26" x2="32" y2="26" class="bd"/></g>
+    <g transform="translate(192,0)"><path d="M0 6 h44 a6 6 0 0 1 6 6 v20 a6 6 0 0 1 -6 6 h-30 l-10 9 v-9 h-4 a6 6 0 0 1 -6 -6 v-20 a6 6 0 0 1 6 -6 z" class="bd" fill="none"/><path d="M12 22 h20 m-6 -6 l6 6 l-6 6" class="bd" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
+  </g>
+  <!-- grid 3 cols x 2 rows -->
+  <g stroke-width="1.5">
+    <!-- row: aislada (branch icon) -->
+    <g transform="translate(58,96)">
+      <circle cx="12" cy="20" r="5" class="bd" fill="none"/><circle cx="12" cy="4" r="4" class="bd" fill="none"/><circle cx="30" cy="14" r="4" class="bd" fill="none"/><path d="M12 15 v-6 M12 12 q0 4 14 3" class="bd" fill="none"/>
+    </g>
+    <g transform="translate(58,158)">
+      <path d="M4 6 h40 a5 5 0 0 1 5 5 v16 a5 5 0 0 1 -5 5 h-26 l-9 8 v-8 h-4 a5 5 0 0 1 -5 -5 v-16 a5 5 0 0 1 5 -5z" class="bd" fill="none"/><path d="M22 20 l5 4 l9 -9" class="bd" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+  <!-- cells -->
+  <g>
+    <rect x="140" y="92" width="76" height="44" rx="7" class="bd" fill="none"/>
+    <rect x="236" y="92" width="76" height="44" rx="7" fill="#4b50e0" fill-opacity="0.14" stroke="#4b50e0" stroke-width="1.6"/>
+    <path d="M266 114 l6 6 l12 -13" stroke="#4b50e0" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="332" y="92" width="76" height="44" rx="7" class="bd" fill="none"/>
+    <rect x="140" y="152" width="76" height="44" rx="7" class="bd" fill="none"/>
+    <rect x="236" y="152" width="76" height="44" rx="7" class="bd" fill="none"/>
+    <rect x="332" y="152" width="76" height="44" rx="7" class="bd" fill="none"/>
+  </g>
+</svg>

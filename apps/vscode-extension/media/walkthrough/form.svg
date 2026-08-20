@@ -1,0 +1,28 @@
+<svg width="440" height="230" viewBox="0 0 440 230" fill="none" xmlns="http://www.w3.org/2000/svg" role="img">
+  <style>
+    .bd{stroke:var(--vscode-panel-border,#c9ccd6)}
+    .cardf{fill:var(--vscode-editorWidget-background,#ffffff)}
+    .in{fill:var(--vscode-input-background,#f1f2f6)}
+    .mut{fill:var(--vscode-descriptionForeground,#9aa0b4)}
+  </style>
+  <rect x="1" y="1" width="438" height="228" rx="12" class="cardf bd"/>
+  <!-- two preset cards -->
+  <rect x="26" y="26" width="184" height="66" rx="8" fill="#4b50e0" fill-opacity="0.12" stroke="#4b50e0" stroke-width="1.8"/>
+  <circle cx="44" cy="46" r="6" fill="#4b50e0"/>
+  <rect x="58" y="41" width="120" height="9" rx="4.5" fill="#4b50e0" fill-opacity="0.55"/>
+  <rect x="42" y="62" width="150" height="7" rx="3.5" class="mut"/>
+  <rect x="42" y="74" width="120" height="7" rx="3.5" class="mut"/>
+  <rect x="230" y="26" width="184" height="66" rx="8" class="bd" fill="none"/>
+  <circle cx="248" cy="46" r="6" class="bd" fill="none"/>
+  <rect x="262" y="41" width="120" height="9" rx="4.5" class="mut"/>
+  <rect x="246" y="62" width="150" height="7" rx="3.5" class="mut"/>
+  <rect x="246" y="74" width="110" height="7" rx="3.5" class="mut"/>
+  <!-- a highlighted field below -->
+  <rect x="26" y="120" width="80" height="8" rx="4" class="mut"/>
+  <rect x="26" y="136" width="388" height="34" rx="7" class="in" stroke="#4b50e0" stroke-width="1.8"/>
+  <rect x="40" y="149" width="230" height="8" rx="4" fill="#4b50e0" fill-opacity="0.45"/>
+  <!-- detected folder chip -->
+  <rect x="26" y="184" width="180" height="24" rx="6" fill="#1c9a68" fill-opacity="0.14" stroke="#1c9a68" stroke-width="1.2"/>
+  <path d="M40 196 l4 4 l8 -9" stroke="#1c9a68" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="58" y="192" width="130" height="8" rx="4" fill="#1c9a68" fill-opacity="0.5"/>
+</svg>

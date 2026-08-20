@@ -243,6 +243,14 @@ function strings(): Record<string, string> {
     repo_locked: t('Fixed for an existing task'),
     agent: t('Agent'),
     signed_in: t('signed in'),
+    what_kind: t('What kind of task?'),
+    preset_conv: t('In a conversation'),
+    preset_conv_d: t('Continue an existing conversation. The work stays inside its chat; the folder is detected from the id.'),
+    preset_iso: t('Isolated task in a repo'),
+    preset_iso_d: t('Fresh work in a worktree of a repository. You review the diff and accept or reject.'),
+    advanced: t('Advanced — mix conversation and workspace'),
+    repo_from_conv: t('from the conversation'),
+    repo_pick_conv_first: t('Detected when you choose the conversation'),
     context: t('Conversation'),
     ctx_new: t('New'),
     ctx_resume: t('Continue'),
@@ -389,7 +397,7 @@ let INIT=null, state={
   proyecto:'',proyectoNombre:'',isGit:true,nombre:'',agente:'',prompt:'',
   regla:'daily',horas:['03:00'],dias:[1],zona:'',perfil:'cambios_aislados',
   modo:'new',sesion:'',politica:'skip',presupuesto:'',autocompact:'',workspace:'isolated',editing:false,
-  sessFolders:[]
+  sessFolders:[],preset:'isolated'
 };
 let previewTimer=null, resolveTimer=null;
 
@@ -411,8 +419,20 @@ function boot(m){
   state.prompt=m.promptTemplate;
   if(m.folders&&m.folders.length){ state.proyecto=m.folders[0].path; state.proyectoNombre=m.folders[0].name; }
   if(m.task){ Object.assign(state, normalizeTask(m.task)); }
+  // El preset («en una conversación» / «tarea aislada») es sólo una vista sobre
+  // los dos ejes reales (modo + workspace). Al editar lo derivamos de la tarea;
+  // en una tarea nueva sale 'isolated' (new + isolated), que es el valor por defecto.
+  state.preset = derivePreset(state.modo, state.workspace);
   render();
   schedulePreview();
+}
+// Traduce el par (conversación, dónde-trabaja) al preset que lo agrupa. Las
+// combinaciones que no son ninguno de los dos atajos caen en 'advanced', donde
+// se muestran los dos ejes por separado.
+function derivePreset(modo, ws){
+  if(modo!=='new' && ws==='direct') return 'conversation';
+  if(modo==='new' && ws==='isolated') return 'isolated';
+  return 'advanced';
 }
 function normalizeTask(tk){
   const o={...tk};
@@ -423,7 +443,9 @@ function normalizeTask(tk){
   return o;
 }
 
-function agent(){ return (INIT.agents||[]).find(a=>a.nombre===state.agente)||INIT.agents[0]; }
+// Nunca undefined: si el panel se abriera sin agentes, un objeto inerte evita
+// que la lectura de .retomar/.derivar lance en el render.
+function agent(){ return (INIT.agents||[]).find(a=>a.nombre===state.agente)||(INIT.agents||[])[0]||{nombre:state.agente,version:'',retomar:false,derivar:false}; }
 
 function render(){
   const S=STR;
@@ -432,10 +454,53 @@ function render(){
   const rail=el('div',{className:'rail'});
   app.append(main,rail);
 
+  const adv = state.preset==='advanced';
+
+  // Intención: dos atajos que fijan los dos ejes por el usuario. El resto del
+  // formulario (repo/conversación/dónde-trabaja) se muestra según el atajo, y
+  // «Avanzado» los revela por separado para poder mezclarlos.
+  const presetWrap=el('div',{});
+  const pcards=el('div',{className:'cards'});
+  [['conversation',S.preset_conv,S.preset_conv_d,'resume','direct'],
+   ['isolated',S.preset_iso,S.preset_iso_d,'new','isolated']].forEach(([p,lbl,d,mo,ws])=>{
+    const c=el('div',{className:'card'+(state.preset===p?' on':'')});
+    c.append(el('div',{className:'h'},lbl), el('div',{className:'d'},d));
+    c.addEventListener('click',()=>{
+      // Si el agente no soporta «retomar», el atajo de conversación cae a modo
+      // nueva; re-derivamos el preset para no dejar un estado incoherente
+      // (preset 'conversation' con modo 'new' pintaría una sección vacía).
+      const canResume = mo==='new' || agent().retomar;
+      state.modo = canResume?mo:'new';
+      state.workspace = ws;
+      state.preset = canResume ? p : derivePreset(state.modo, state.workspace);
+      state.sesion=''; state.sessFolders=[];
+      // Al volver a un flujo aislado, si el proyecto apunta a una carpeta que no
+      // está entre las abiertas (la fijó una conversación anterior), lo
+      // devolvemos al repositorio por defecto para que el selector y lo que se
+      // envía coincidan. En edición el repositorio es fijo y no se toca.
+      if(!state.editing && ws==='isolated' && !(INIT.folders||[]).some(f=>f.path===state.proyecto)){
+        const d=(INIT.folders||[])[0];
+        if(d){ state.proyecto=d.path; state.proyectoNombre=d.name; state.isGit=true; }
+        else { state.proyecto=''; state.proyectoNombre=''; }
+      }
+      render(); updateSummary(); // render() vuelve a pedir sesiones si hace falta
+    });
+    pcards.append(c);
+  });
+  presetWrap.append(pcards);
+  if(!adv){
+    const advLink=el('button',{className:'link',style:'margin-top:9px'}, S.advanced+' ▸');
+    advLink.addEventListener('click',()=>{ state.preset='advanced'; render(); updateSummary(); });
+    presetWrap.append(advLink);
+  }
+  main.append(field(S.what_kind, presetWrap));
+
   // Name
   main.append(field(S.name+' *', (()=>{ const i=el('input',{type:'text',value:state.nombre,placeholder:S.name_ph}); i.addEventListener('input',()=>{state.nombre=i.value; setErr('nombre',''); updateSummary();}); return wrapErr('nombre',i); })()));
 
-  // Repository
+  // Repository — con atajo «en una conversación» el repo lo fija la propia
+  // conversación (autodetección de carpeta), así que se muestra de solo lectura.
+  const repoFromConv = state.preset==='conversation';
   const repoRow=el('div',{className:'row'});
   const repoChip=el('span',{className:'chip'}, state.proyectoNombre||'—');
   // El aviso de «no es un repo Git» solo importa en modo aislado: en modo
@@ -445,6 +510,10 @@ function render(){
     // El repositorio de una tarea es fijo: editar no lo reasigna. Se muestra
     // bloqueado en vez de ofrecer un cambio que se ignoraría en silencio.
     repoRow.append(repoChip, el('span',{style:'font-size:11.5px;color:var(--vscode-descriptionForeground)'}, S.repo_locked));
+  } else if(repoFromConv){
+    // Lo elige la conversación: solo lectura, con la nota de que se autodetecta.
+    const note = state.sesion ? S.repo_from_conv : S.repo_pick_conv_first;
+    repoRow.append(repoChip, el('span',{style:'font-size:11.5px;color:var(--vscode-descriptionForeground)'}, '· '+note));
   } else {
     const sel=el('select');
     (INIT.folders||[]).forEach(f=>{ const o=el('option',{value:f.path},f.name); if(f.path===state.proyecto)o.selected=true; sel.append(o); });
@@ -460,55 +529,74 @@ function render(){
     const c=el('div',{className:'card'+(a.nombre===state.agente?' on':'')});
     c.append(el('div',{className:'h'}, a.nombre==='claude'?'Claude Code':'Codex'));
     c.append(el('div',{className:'d'}, 'v'+a.version+' · '+S.signed_in));
-    c.addEventListener('click',()=>{ state.agente=a.nombre; if(!agent().retomar&&state.modo!=='new')state.modo='new'; render(); updateSummary(); });
+    c.addEventListener('click',()=>{ state.agente=a.nombre; if(!agent().retomar&&state.modo!=='new'){state.modo='new'; state.preset=derivePreset(state.modo,state.workspace);} render(); updateSummary(); });
     agCards.append(c);
   });
   main.append(field(S.agent, agCards));
 
-  // Context / conversation
-  const modes=[['new',S.ctx_new,S.ctx_new_d,true]];
-  if(agent().retomar) modes.push(['resume',S.ctx_resume,S.ctx_resume_d,true]);
-  if(agent().derivar) modes.push(['fork',S.ctx_fork,S.ctx_fork_d,true]);
-  const seg=el('div',{className:'seg'});
-  modes.forEach(([mo,lbl])=>{ const b=el('button',{},lbl); if(state.modo===mo)b.classList.add('on'); b.addEventListener('click',()=>{ state.modo=mo; state.sessFolders=[]; render(); updateSummary(); if(mo!=='new')requestSessions(); }); seg.append(b); });
-  const ctxWrap=el('div',{}, seg);
-  if(state.modo!=='new'){
-    const picker=el('div',{className:'picker',id:'sessPicker'}, el('div',{className:'opt'}, '…'));
-    const idIn=el('input',{type:'text',placeholder:S.session_ph,value:state.sesion,style:'margin-top:9px'});
-    idIn.addEventListener('input',()=>{ state.sesion=idIn.value; setErr('sesion',''); scheduleResolve(); });
-    ctxWrap.append(picker, idIn);
-    // Carpeta detectada a partir del id de la conversación.
-    const sf=state.sessFolders||[];
-    if(sf.length===1){
-      ctxWrap.append(el('div',{style:'margin-top:8px;font-size:12px;color:var(--vscode-descriptionForeground)'}, S.folder_detected+': '+sf[0].cwd));
-    } else if(sf.length>1){
-      const box=el('div',{style:'margin-top:8px;font-size:12px'});
-      box.append(el('div',{style:'color:var(--vscode-descriptionForeground);margin-bottom:5px'}, S.folder_multi));
-      const row=el('div',{className:'row'});
-      sf.forEach(f=>{ const b=el('button',{className:'chip'+(state.proyecto===f.cwd?' on':''),title:f.cwd},f.name); b.addEventListener('click',()=>{ setProyecto(f.cwd,f.name,f.isGit); render(); updateSummary(); }); row.append(b); });
-      box.append(row);
-      ctxWrap.append(box);
+  // Context / conversation. En el atajo «aislado» no hay conversación que
+  // elegir (modo = nueva), así que la sección entera se omite. El selector de
+  // modo (nueva/continuar/derivar) sólo aparece en modo avanzado; con el atajo
+  // «en una conversación» el modo está fijado a «continuar».
+  const showCtx = adv || state.preset==='conversation';
+  if(showCtx){
+    const ctxWrap=el('div',{});
+    if(adv){
+      const modes=[['new',S.ctx_new,S.ctx_new_d,true]];
+      if(agent().retomar) modes.push(['resume',S.ctx_resume,S.ctx_resume_d,true]);
+      if(agent().derivar) modes.push(['fork',S.ctx_fork,S.ctx_fork_d,true]);
+      const seg=el('div',{className:'seg'});
+      modes.forEach(([mo,lbl])=>{ const b=el('button',{},lbl); if(state.modo===mo)b.classList.add('on'); b.addEventListener('click',()=>{ state.modo=mo; state.sessFolders=[]; render(); updateSummary(); }); seg.append(b); }); // render() vuelve a pedir sesiones si hace falta
+      ctxWrap.append(seg);
     }
+    if(state.modo!=='new'){
+      const picker=el('div',{className:'picker',id:'sessPicker'}, el('div',{className:'opt'}, '…'));
+      const idIn=el('input',{type:'text',placeholder:S.session_ph,value:state.sesion,style:'margin-top:9px'});
+      idIn.addEventListener('input',()=>{ state.sesion=idIn.value; setErr('sesion',''); scheduleResolve(); });
+      ctxWrap.append(picker, idIn);
+      // Carpeta detectada a partir del id de la conversación. En el atajo «en
+      // una conversación» la carpeta ya se ve en el chip del repositorio, así
+      // que aquí sólo mostramos la línea de una carpeta en modo avanzado; el
+      // selector de varias carpetas se muestra siempre (es una decisión).
+      const sf=state.sessFolders||[];
+      if(sf.length===1 && adv){
+        ctxWrap.append(el('div',{style:'margin-top:8px;font-size:12px;color:var(--vscode-descriptionForeground)'}, S.folder_detected+': '+sf[0].cwd));
+      } else if(sf.length>1){
+        const box=el('div',{style:'margin-top:8px;font-size:12px'});
+        box.append(el('div',{style:'color:var(--vscode-descriptionForeground);margin-bottom:5px'}, S.folder_multi));
+        const row=el('div',{className:'row'});
+        sf.forEach(f=>{ const b=el('button',{className:'chip'+(state.proyecto===f.cwd?' on':''),title:f.cwd},f.name); b.addEventListener('click',()=>{ setProyecto(f.cwd,f.name,f.isGit); render(); updateSummary(); }); row.append(b); });
+        box.append(row);
+        ctxWrap.append(box);
+      }
+    }
+    main.append(field(S.context, wrapErr('sesion', ctxWrap)));
+    if(state.modo!=='new') requestSessions();
   }
-  main.append(field(S.context, wrapErr('sesion', ctxWrap)));
-  if(state.modo!=='new') requestSessions();
 
   // Dónde trabaja: aislada (worktree + revisión) o directa (en la conversación).
-  const wsWrap=el('div',{});
-  const wsSeg=el('div',{className:'seg'});
+  // Los dos atajos ya fijan este eje; sólo se muestra el selector en avanzado.
+  // El aviso de «cambios directos» sí se conserva fuera de avanzado, porque
+  // avisa de un riesgo real (escribir sin revisión) sea cual sea la vista.
   const directoCambios = ()=> state.workspace==='direct' && state.perfil==='cambios_aislados';
-  [['isolated',S.ws_isolated,S.ws_isolated_d],['direct',S.ws_direct,S.ws_direct_d]].forEach(([w,lbl,d])=>{
-    const b=el('button',{},lbl); if(state.workspace===w)b.classList.add('on');
-    b.addEventListener('click',()=>{ state.workspace=w; render(); updateSummary(); });
-    wsSeg.append(b);
-  });
-  wsWrap.append(wsSeg);
-  const wsDesc=el('div',{style:'font-size:11.5px;color:var(--vscode-descriptionForeground);margin-top:6px'}, state.workspace==='direct'?S.ws_direct_d:S.ws_isolated_d);
-  wsWrap.append(wsDesc);
-  if(directoCambios()){
-    wsWrap.append(el('div',{style:'margin-top:7px;font-size:12px;font-weight:600;color:var(--vscode-inputValidation-errorForeground,#f48771)'}, S.ws_direct_changes+' — '+S.ws_direct_warn));
+  if(adv){
+    const wsWrap=el('div',{});
+    const wsSeg=el('div',{className:'seg'});
+    [['isolated',S.ws_isolated,S.ws_isolated_d],['direct',S.ws_direct,S.ws_direct_d]].forEach(([w,lbl,d])=>{
+      const b=el('button',{},lbl); if(state.workspace===w)b.classList.add('on');
+      b.addEventListener('click',()=>{ state.workspace=w; render(); updateSummary(); });
+      wsSeg.append(b);
+    });
+    wsWrap.append(wsSeg);
+    const wsDesc=el('div',{style:'font-size:11.5px;color:var(--vscode-descriptionForeground);margin-top:6px'}, state.workspace==='direct'?S.ws_direct_d:S.ws_isolated_d);
+    wsWrap.append(wsDesc);
+    if(directoCambios()){
+      wsWrap.append(el('div',{style:'margin-top:7px;font-size:12px;font-weight:600;color:var(--vscode-inputValidation-errorForeground,#f48771)'}, S.ws_direct_changes+' — '+S.ws_direct_warn));
+    }
+    main.append(field(S.workspace, wsWrap));
+  } else if(directoCambios()){
+    main.append(field(S.ws_direct_changes, el('div',{style:'font-size:12px;font-weight:600;color:var(--vscode-inputValidation-errorForeground,#f48771)'}, S.ws_direct_warn)));
   }
-  main.append(field(S.workspace, wsWrap));
 
   // Prompt
   const ta=el('textarea',{value:state.prompt}); ta.addEventListener('input',()=>{state.prompt=ta.value;});
@@ -573,7 +661,7 @@ function render(){
     const acSel=el('select',{style:'max-width:240px'});
     [['',S.ac_default],['auto',S.ac_auto],['200k','200k'],['300k','300k'],['500k','500k']].forEach(([v,lbl])=>{ const o=el('option',{value:v},lbl); if(state.autocompact===v)o.selected=true; acSel.append(o); });
     acSel.addEventListener('change',()=>{ state.autocompact=acSel.value; });
-    const acWrap=el('div',{}); acWrap.append(acSel); acWrap.append(el('div',{className:'rail-note',style:'font-size:11.5px;color:var(--vscode-descriptionForeground);margin-top:6px'}, S.ac_hint));
+    const acWrap=el('div',{}); acWrap.append(acSel); acWrap.append(el('div',{style:'font-size:11.5px;color:var(--vscode-descriptionForeground);margin-top:6px'}, S.ac_hint));
     main.append(field(S.autocompact, acWrap));
   }
 
@@ -593,7 +681,9 @@ function render(){
   rail.append(el('h4',{},S.summary));
   const box=el('div',{className:'box',id:'summaryBox'});
   rail.append(box);
-  rail.append(el('div',{className:'note'}, S.isolation_note));
+  // La nota del rail describe el modo real: en directo NO hay worktree ni
+  // revisión, así que la nota de aislamiento sería falsa.
+  rail.append(el('div',{className:'note'}, state.workspace==='direct'?S.ws_direct_d:S.isolation_note));
   updateSummary();
 }
 
@@ -617,7 +707,10 @@ function onSessionFolders(folders){
 function renderSessions(list){
   const p=document.getElementById('sessPicker'); if(!p)return; p.innerHTML='';
   if(!list.length){ p.append(el('div',{className:'opt'}, STR.session_ph)); return; }
-  list.forEach(s=>{ const o=el('div',{className:'opt'+(state.sesion===s.id?' on':'')}); o.append(el('div',{},s.title||s.id)); o.append(el('div',{className:'m'}, s.id.slice(0,8)+' · '+s.when)); o.addEventListener('click',()=>{ state.sesion=s.id; state.sessFolders=[]; const inp=p.parentElement.querySelector('input'); if(inp)inp.value=s.id; [...p.children].forEach(c=>c.classList.remove('on')); o.classList.add('on'); setErr('sesion',''); }); p.append(o); });
+  // Al elegir una sesión re-renderizamos: la nota del repositorio depende de
+  // state.sesion («desde la conversación» vs «se detecta al elegir…»), así que
+  // un ajuste manual del DOM la dejaría obsoleta.
+  list.forEach(s=>{ const o=el('div',{className:'opt'+(state.sesion===s.id?' on':'')}); o.append(el('div',{},s.title||s.id)); o.append(el('div',{className:'m'}, s.id.slice(0,8)+' · '+s.when)); o.addEventListener('click',()=>{ state.sesion=s.id; state.sessFolders=[]; setErr('sesion',''); render(); updateSummary(); }); p.append(o); });
 }
 
 function schedulePreview(){ clearTimeout(previewTimer); previewTimer=setTimeout(sendPreview,350); }

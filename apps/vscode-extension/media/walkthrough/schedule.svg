@@ -1,0 +1,34 @@
+<svg width="440" height="230" viewBox="0 0 440 230" fill="none" xmlns="http://www.w3.org/2000/svg" role="img">
+  <style>
+    .bd{stroke:var(--vscode-panel-border,#c9ccd6)}
+    .cardf{fill:var(--vscode-editorWidget-background,#ffffff)}
+  </style>
+  <rect x="1" y="1" width="438" height="228" rx="12" class="cardf bd"/>
+  <!-- clock -->
+  <g transform="translate(118,115)">
+    <circle r="72" class="bd" fill="none" stroke-width="2"/>
+    <circle r="72" fill="#4b50e0" fill-opacity="0.05"/>
+    <g stroke-width="2" stroke-linecap="round">
+      <line x1="0" y1="-72" x2="0" y2="-62" class="bd"/>
+      <line x1="72" y1="0" x2="62" y2="0" class="bd"/>
+      <line x1="0" y1="72" x2="0" y2="62" class="bd"/>
+      <line x1="-72" y1="0" x2="-62" y2="0" class="bd"/>
+    </g>
+    <!-- hands -->
+    <line x1="0" y1="0" x2="0" y2="-42" stroke="#4b50e0" stroke-width="3" stroke-linecap="round"/>
+    <line x1="0" y1="0" x2="34" y2="18" stroke="#4b50e0" stroke-width="3" stroke-linecap="round"/>
+    <circle r="4.5" fill="#4b50e0"/>
+  </g>
+  <!-- two time chips -->
+  <g>
+    <rect x="238" y="70" width="150" height="42" rx="9" fill="#4b50e0" fill-opacity="0.10" stroke="#4b50e0" stroke-width="1.6"/>
+    <circle cx="262" cy="91" r="10" fill="none" stroke="#4b50e0" stroke-width="1.8"/>
+    <path d="M262 85 v6 l4 3" stroke="#4b50e0" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+    <rect x="282" y="86" width="86" height="10" rx="5" fill="#4b50e0" fill-opacity="0.45"/>
+
+    <rect x="238" y="126" width="150" height="42" rx="9" fill="#4b50e0" fill-opacity="0.10" stroke="#4b50e0" stroke-width="1.6"/>
+    <circle cx="262" cy="147" r="10" fill="none" stroke="#4b50e0" stroke-width="1.8"/>
+    <path d="M262 141 v6 l4 3" stroke="#4b50e0" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+    <rect x="282" y="142" width="86" height="10" rx="5" fill="#4b50e0" fill-opacity="0.45"/>
+  </g>
+</svg>

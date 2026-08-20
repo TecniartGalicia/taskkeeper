@@ -7,6 +7,11 @@
 
 
 
+## 0.5.0 — 2026-08-20
+
+- **Crear una tarea empieza por la intención.** El panel abre con dos atajos —**«En una conversación»** (continúa una conversación; el trabajo queda en su chat) y **«Tarea aislada en un repo»** (worktree que revisas)— que fijan por ti los dos ejes (conversación × dónde trabaja). Con «En una conversación» el repositorio lo pone la propia conversación (autodetección de carpeta), y sobra elegirlo a mano. Un enlace **«Avanzado»** revela los dos ejes por separado para mezclarlos (p. ej. continuar + aislada).
+- **Tutorial interactivo (ES/EN).** La primera vez que se instala, o desde **«Empezar (tutorial)»**, se abre un recorrido guiado de cuatro pasos —los dos ejes, crear la tarea, el horario y ver el resultado— en el idioma de VS Code. Iconos propios, sin emojis.
+
 ## 0.4.0 — 2026-08-19
 
 - **La carpeta se detecta sola desde la conversación.** Al elegir «Continuar» o «Derivar» y meter el id de una conversación, TaskKeeper averigua en qué carpeta vive esa conversación y pone el repositorio por ti — ya no tienes que acertar la carpeta a mano. Si la misma conversación existe en varias carpetas, te las ofrece para elegir.

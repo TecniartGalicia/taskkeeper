@@ -2,7 +2,7 @@
   "name": "taskkeeper",
   "displayName": "TaskKeeper",
   "description": "Run Claude Code and Codex on a schedule, isolated in a Git worktree, and review the diff in the morning before anything touches your branch. Local-first, no telemetry, free. Not affiliated with any agent vendor.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "argalla",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -217,6 +217,12 @@
         "command": "taskkeeper.showRunRaw",
         "title": "%cmd.showRunRaw%",
         "category": "TaskKeeper"
+      },
+      {
+        "command": "taskkeeper.getStarted",
+        "title": "%cmd.getStarted%",
+        "category": "TaskKeeper",
+        "icon": "$(book)"
       }
     ],
     "menus": {
@@ -387,7 +393,41 @@
           "markdownDescription": "%cfg.notifications%"
         }
       }
-    }
+    },
+    "walkthroughs": [
+      {
+        "id": "taskkeeper.getStarted",
+        "title": "%walk.title%",
+        "description": "%walk.desc%",
+        "steps": [
+          {
+            "id": "taskkeeper.walk.axes",
+            "title": "%walk.axes.title%",
+            "description": "%walk.axes.desc%",
+            "media": { "svg": "media/walkthrough/axes.svg", "altText": "%walk.axes.alt%" }
+          },
+          {
+            "id": "taskkeeper.walk.create",
+            "title": "%walk.create.title%",
+            "description": "%walk.create.desc%",
+            "media": { "svg": "media/walkthrough/form.svg", "altText": "%walk.create.alt%" },
+            "completionEvents": ["onCommand:taskkeeper.newTask"]
+          },
+          {
+            "id": "taskkeeper.walk.schedule",
+            "title": "%walk.schedule.title%",
+            "description": "%walk.schedule.desc%",
+            "media": { "svg": "media/walkthrough/schedule.svg", "altText": "%walk.schedule.alt%" }
+          },
+          {
+            "id": "taskkeeper.walk.results",
+            "title": "%walk.results.title%",
+            "description": "%walk.results.desc%",
+            "media": { "svg": "media/walkthrough/results.svg", "altText": "%walk.results.alt%" }
+          }
+        ]
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run build",

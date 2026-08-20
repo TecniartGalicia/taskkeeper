@@ -305,6 +305,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (env.aviso_reactivacion) out.appendLine(`wake     ${env.aviso_reactivacion}`);
   });
 
+  // Tutorial interactivo (Walkthrough nativo, ES/EN). Comando para abrirlo a
+  // demanda y apertura automática la primera vez que se instala.
+  const walkId = `${context.extension.id}#taskkeeper.getStarted`;
+  reg('taskkeeper.getStarted', async () => {
+    await vscode.commands.executeCommand('workbench.action.openWalkthrough', walkId, false);
+  });
+  const SHOWN = 'taskkeeper.walkthroughShown';
+  if (!context.globalState.get<boolean>(SHOWN)) {
+    void context.globalState.update(SHOWN, true).then(undefined, () => {});
+    // Primer arranque en esta máquina: abrimos el tutorial en el editor (toma el
+    // foco, como la página de bienvenida de VS Code). Solo ocurre una vez.
+    void vscode.commands.executeCommand('workbench.action.openWalkthrough', walkId, false)
+      .then(undefined, (e) => log(`walkthrough: ${(e as Error).message}`));
+  }
+
   refreshAll();
   log(`activated ${version}`);
 }

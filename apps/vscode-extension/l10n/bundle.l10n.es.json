@@ -235,5 +235,13 @@
   "Open that folder": "Abrir esa carpeta",
   "This conversation lives in {0}. Open that folder in VS Code to see it in the Claude Code chat.": "Esta conversación vive en {0}. Abre esa carpeta en VS Code para verla en el chat de Claude Code.",
   "Folder detected from the conversation": "Carpeta detectada de la conversación",
-  "This conversation exists in several folders — pick the right one:": "Esta conversación existe en varias carpetas — elige la correcta:"
+  "This conversation exists in several folders — pick the right one:": "Esta conversación existe en varias carpetas — elige la correcta:",
+  "What kind of task?": "¿Qué tipo de tarea?",
+  "In a conversation": "En una conversación",
+  "Continue an existing conversation. The work stays inside its chat; the folder is detected from the id.": "Continúa una conversación existente. El trabajo queda dentro de su chat; la carpeta se detecta a partir del id.",
+  "Isolated task in a repo": "Tarea aislada en un repo",
+  "Fresh work in a worktree of a repository. You review the diff and accept or reject.": "Trabajo nuevo en un worktree de un repositorio. Revisas el diff y aceptas o rechazas.",
+  "Advanced — mix conversation and workspace": "Avanzado — mezclar conversación y dónde trabaja",
+  "from the conversation": "desde la conversación",
+  "Detected when you choose the conversation": "Se detecta al elegir la conversación"
 }
