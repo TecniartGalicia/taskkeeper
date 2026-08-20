@@ -7,6 +7,10 @@
 
 
 
+## 0.8.2 — 2026-08-20
+
+- **macOS (preview).** TaskKeeper empieza a publicarse también para Mac (Apple Silicon e Intel). Los binarios van **firmados con Developer ID y notarizados por Apple**, así que se abren sin avisos de Gatekeeper. Sigue en vista previa mientras se verifica el comportamiento en hardware real; los informes de usuarios de Mac son bienvenidos.
+
 ## 0.8.1 — 2026-08-20
 
 - Pulido tras la auditoría final: al encadenar «cuando termine bien», ahora se avisa y se impide elegir una tarea padre aislada (que nunca se aceptaría sola y dejaría la dependencia muerta); usa «cuando falle» o «de cualquier modo», o haz que el padre corra en la conversación. Los paneles de resumen y gasto ya no dejan promesas sin capturar si el agente falla durante un refresco automático.
