@@ -7,6 +7,15 @@
 
 
 
+## 0.8.6 — 2026-08-20
+
+- **Ficha de la tienda al día.** Corregido el README, que aún decía «solo Windows, macOS sin
+  verificar» cuando macOS ya está publicado y firmado. Añadidas las novedades que faltaban por
+  contar: el resumen de «Anoche» con detección de disparador perdido, el panel de gasto con tope
+  mensual, las plantillas de tarea, el encadenado de tareas y el tutorial. Palabras clave ampliadas
+  y quitada la etiqueta global de «preview» (Windows es estable desde la primera versión; el matiz
+  de macOS-reciente va en el texto). Sin cambios de código.
+
 ## 0.8.5 — 2026-08-20
 
 - **Refuerzo de permisos (importante).** Las tareas de Claude Code ahora arrancan con un **perfil de permisos controlado** que tu configuración personal de Claude no puede ampliar: aunque tengas permisos amplios o «bypass» activados para tu uso interactivo, una tarea de solo lectura sigue siendo de solo lectura, y una de cambios aislados no puede salir a la red (se bloquea WebFetch/WebSearch) ni hacer push/merge. Antes, una tarea desatendida podía heredar tus permisos amplios.
