@@ -1,5 +1,23 @@
 # Publicar TaskKeeper en macOS — guía completa (lo que queda del §27.5)
 
+> ## ✅ Estado a 2026-08-20 — lo ya hecho por el agente (con Néstor en el navegador)
+> - **Apple Developer Program:** activo (organización **Tecniart Galicia S.L.**, Team ID `68UG9K3WHR`).
+> - **Certificado Developer ID Application:** creado (G2, expira 2031-08-21) → `.p12` con clave privada + contraseña, en `Documents/taskkeeper-signing/`.
+> - **API Key para notarizar:** creada (`tk-notary`, Key ID `XD6MNP62WQ`, rol Desarrollador) → `.p8` en `Documents/taskkeeper-signing/`. Issuer ID `af6b9e6c-a9fc-46b4-9eae-6401b3ccdd3a`.
+> - **6 secretos de GitHub** puestos en `TecniartGalicia/taskkeeper`: `APPLE_TEAM_ID`, `APPLE_API_ISSUER_ID`, `APPLE_API_KEY_ID`, `APPLE_API_KEY_P8_BASE64`, `APPLE_CERT_P12_BASE64`, `APPLE_CERT_PASSWORD`.
+> - **`release.yml` reescrito** en 3 jobs (verify → publish [matriz win32 + darwin firmado/notarizado] → release), idempotente por (versión,target).
+>
+> **Lo que queda (tú):**
+> 1. **Encender macOS** cuando quieras: crea la *variable* de repositorio `PUBLISH_MACOS=true` (Settings → Secrets and variables → Actions → Variables). Sin ella, el CI sigue publicando solo Windows; con ella, la próxima etiqueta firma, notariza y publica también las dos versiones de Mac.
+> 2. **Verificar en un Mac real** (una tarde): que launchd programa y despierta, y que el binario notarizado abre sin aviso (`spctl -a -vv -t install <binario>`).
+> 3. **Beta corta** y luego **quitar `"preview"`** (Parte E) para pasar a GA.
+> 4. Limpieza menor: revocar en App Store Connect la clave `taskkeeper-notary` (KFUNJZ544S) que quedó sin `.p8`.
+>
+> Los ficheros sensibles (`.p12`, `.p8`, contraseña, `gh-secrets.txt`) están SOLO en `Documents/taskkeeper-signing/`, nunca en el repo. Haz una copia de seguridad de esa carpeta (si pierdes el `.p8` hay que crear otra clave; si pierdes el `.p12`/clave, otro certificado).
+
+---
+
+
 Estado: el código de macOS está escrito y **cross-compila** (verificado `darwin-x64` y `darwin-arm64`), y hay un **compile-check en cada release** para que no se rompa. Lo que falta para poder ofrecerlo a usuarios de Mac depende de **ti** (certificados + un Mac + una beta), no del agente. Este documento es la lista de tareas.
 
 > Regla de oro: en macOS, un binario **sin firmar y sin notarizar** lo **bloquea Gatekeeper** en el primer arranque («no se puede abrir porque Apple no puede comprobar si contiene malware»). Por eso firmar+notarizar es **obligatorio** para Mac, no opcional.
