@@ -57,12 +57,17 @@ Prioridad por impacto en instalaciones:
 2. **[HECHO] Metadatos** — keywords ampliadas, quitado el flag `preview` (Windows es maduro desde
    0.1.0; el matiz de macOS-preview va en el texto, no marcando toda la extensión como preview),
    Q&A del marketplace activo.
-3. **[PENDIENTE — mayor palanca] Capturas y GIF.** La ficha no tiene ninguna imagen. En herramientas
-   de dev, el *hero* y las capturas mueven la aguja más que el texto. Plan de captura en la §6.
-   - **Hero (la foto que vende):** la bandeja de la mañana con un diff y los botones aceptar/rechazar.
-   - 4–5 capturas: panel de crear tarea (intención primero), plantillas, horario, resumen “Anoche”
-     con salud del planificador, panel de Gasto.
-   - **GIF corto (8–12 s, en bucle):** crear tarea → “ejecutar ahora” → abrir diff → aceptar.
+3. **[HECHO en 0.8.7] Capturas y GIF.** Cuatro capturas + un GIF, generados renderizando el **HTML
+   real de los webviews** (extraído de los `.ts`) con el tema Dark Modern de VS Code inyectado y datos
+   de ejemplo, dentro de un marco de pestaña de VS Code — fieles al panel real, no maquetas. En
+   `media/shots/` (excluidas del VSIX por `.vscodeignore`; servidas en el README por URL raw de GitHub):
+   - `inbox.png` — **hero**: la bandaja de la mañana (ejecución terminada + aceptar/rechazar + transcripción).
+   - `new-task.png` — crear tarea, intención primero (plantillas + los dos ejes + repo + agente).
+   - `digest.png` — «Anoche» + salud del planificador (fila roja «Trigger missing»).
+   - `spend.png` — gasto del mes vs. tope, por día y por tarea.
+   - `demo.gif` — flujo: corre de noche → termina → espera revisión → aceptado (8 s, 60 KB, en bucle).
+   - Scripts reproducibles: `~/handsfree-browser/mkshots.mjs` (capturas), `mkgif.mjs` (fotogramas del
+     GIF) y `mktask.mjs` (panel de tarea); el GIF se monta con ffmpeg (concat + palette).
 4. **Descripción corta** afinada para búsqueda + valor (ver §5).
 
 ## 5. Copys listos (store)

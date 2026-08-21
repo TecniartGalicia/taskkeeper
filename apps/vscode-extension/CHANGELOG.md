@@ -7,6 +7,14 @@
 
 
 
+## 0.8.7 — 2026-08-21
+
+- **Capturas y GIF en la ficha.** La página de la tienda ya enseña de qué va: la bandeja de la
+  mañana (una ejecución terminada con aceptar/rechazar), crear una tarea empezando por la intención,
+  el resumen de «Anoche» con la salud del planificador (una tarea con el disparador perdido en rojo)
+  y el panel de gasto con el tope mensual, más un GIF del flujo completo: la tarea corre de noche y
+  por la mañana espera tu revisión. Sin cambios de código.
+
 ## 0.8.6 — 2026-08-20
 
 - **Ficha de la tienda al día.** Corregido el README, que aún decía «solo Windows, macOS sin

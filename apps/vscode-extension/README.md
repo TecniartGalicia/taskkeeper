@@ -8,6 +8,8 @@ Scheduling prompts is something several tools already do, including the agents t
 
 > Free, local-first, no telemetry, no account. Not affiliated with Anthropic or OpenAI.
 
+![A task runs overnight in an isolated worktree, then waits in the morning inbox — accept or discard](https://raw.githubusercontent.com/TecniartGalicia/taskkeeper/HEAD/apps/vscode-extension/media/shots/demo.gif)
+
 ## What you get
 
 | | |
@@ -33,13 +35,21 @@ The prompt matters more than the schedule. TaskKeeper pre-fills a durable struct
 
 ## Screenshots
 
-<!-- SHOTS: hero = morning inbox with a diff + accept/reject. Add under media/shots/ and reference here. -->
-<!-- ![The morning inbox](media/shots/inbox.png) -->
-<!-- ![Create a task, intent first](media/shots/new-task.png) -->
-<!-- ![Last night digest + scheduler health](media/shots/last-night.png) -->
-<!-- ![Spend, by day and by task](media/shots/spend.png) -->
+**The morning inbox** — a finished run, its cost and files, the readable transcript, and two buttons: accept into your branch, or discard.
 
-_Screenshots and a short demo GIF land in the next update._
+![The morning inbox: a finished run with accept and reject](https://raw.githubusercontent.com/TecniartGalicia/taskkeeper/HEAD/apps/vscode-extension/media/shots/inbox.png)
+
+**Create a task, intent first** — start from *in a conversation* or *isolated task in a repo* (or a template), and TaskKeeper fills in the rest.
+
+![Creating a task: templates, the two intents, repository and agent](https://raw.githubusercontent.com/TecniartGalicia/taskkeeper/HEAD/apps/vscode-extension/media/shots/new-task.png)
+
+**Last night, at a glance** — what ran while you were away, and scheduler health: a task whose OS trigger went missing turns red instead of silently never running again.
+
+![The Last night digest with scheduler health, flagging a missing trigger](https://raw.githubusercontent.com/TecniartGalicia/taskkeeper/HEAD/apps/vscode-extension/media/shots/digest.png)
+
+**Spend, with a monthly cap** — the month against your cap, broken down by day and by task.
+
+![The Spend panel: month vs. cap, by day and by task](https://raw.githubusercontent.com/TecniartGalicia/taskkeeper/HEAD/apps/vscode-extension/media/shots/spend.png)
 
 ## How it works
 
