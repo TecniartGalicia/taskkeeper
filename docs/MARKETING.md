@@ -7,6 +7,13 @@ Editor/publisher: **argalla** (Tecniart Galicia, S.L.). Repo: `TecniartGalicia/t
 > Regla de casa: **los posts los redacto yo, los publica una persona.** Nada de automatizar
 > publicaciones en redes (X suspende cuentas por eso). Los borradores están en la §7.
 
+**Estado del lanzamiento (2026-08-21):**
+- **HECHO (canales propios, sin riesgo):** publicado en VS Marketplace + Open VSX (Win + macOS firmado);
+  **GitHub Release v0.8.7** reescrito como anuncio (GIF + diferenciador + instalación + novedades);
+  repo con descripción, homepage → Marketplace, y 12 *topics* para descubrimiento.
+- **PENDIENTE (los publica una persona):** Show HN, dev.to, Reddit, X — borradores listos en la §7.
+  Puedo dejar cada uno cargado en su formulario para que solo revises y pulses publicar.
+
 ---
 
 ## 1. Posicionamiento (una frase)
