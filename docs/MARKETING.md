@@ -11,7 +11,9 @@ Editor/publisher: **argalla** (Tecniart Galicia, S.L.). Repo: `TecniartGalicia/t
 - **HECHO (canales propios, sin riesgo):** publicado en VS Marketplace + Open VSX (Win + macOS firmado);
   **GitHub Release v0.8.7** reescrito como anuncio (GIF + diferenciador + instalación + novedades);
   repo con descripción, homepage → Marketplace, y 12 *topics* para descubrimiento.
-- **PENDIENTE (los publica una persona):** Show HN, dev.to, Reddit, X — borradores listos en la §7.
+- **HECHO en X (@ArgallaTec):** hilo de 3 tuits publicado el 2026-08-21 (yo lo dejé cargado en el
+  compositor, lo publicó el titular). X generó sola la tarjeta de enlace del Marketplace.
+- **PENDIENTE (los publica una persona):** Show HN, dev.to, Reddit — borradores listos en la §7.
   Puedo dejar cada uno cargado en su formulario para que solo revises y pulses publicar.
 
 ---
